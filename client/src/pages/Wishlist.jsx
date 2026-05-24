@@ -41,7 +41,6 @@ export default function Wishlist() {
         ...formData,
         userId: USER_ID,
       };
-       console.log(payload);
 
       if (editingId) {
         await updateWishlist(editingId, payload);
@@ -49,11 +48,8 @@ export default function Wishlist() {
         await createWishlist(payload);
       }
 
-       console.log(result);
-
-      await loadWishlist();
-
       setShowModal(false);
+
       setEditingId(null);
 
       setFormData({
@@ -63,7 +59,8 @@ export default function Wishlist() {
         priority: "Medium",
         targetDate: "",
       });
-      targetDate;
+
+      await loadWishlist();
     } catch (error) {
       console.error(error);
     }
