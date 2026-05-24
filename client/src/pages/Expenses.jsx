@@ -24,9 +24,11 @@ export default function Expenses() {
     try {
       const response = await getExpensesByUser(USER_ID);
 
-      setExpenses(response.data.data);
+      setExpenses(response.data || []);
     } catch (error) {
       console.error(error);
+
+      setExpenses([]);
     }
   };
 
@@ -179,7 +181,7 @@ export default function Expenses() {
             </thead>
 
             <tbody>
-              {expenses.map((expense) => (
+              {expenses?.map((expense) => (
                 <tr
                   key={expense._id}
                   className="border-b border-white/5 hover:bg-white/5 transition"
