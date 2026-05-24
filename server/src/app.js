@@ -4,6 +4,7 @@ import cors from "cors";
 import userRoutes from "./routes/userRoutes.js";
 
 import expenseRoutes from "./routes/expenseRoutes.js";
+import budgetRoutes from "./routes/budgetRoutes.js";
 
 const app = express();
 
@@ -18,6 +19,10 @@ app.use(
   "/api/expenses",
   expenseRoutes
 );
+app.use(
+  "/api/budget",
+  budgetRoutes
+)
 
 app.get("/", (req, res) => {
   res.json({
