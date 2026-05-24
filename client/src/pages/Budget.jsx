@@ -6,27 +6,35 @@ import {
   FiAlertTriangle,
 } from "react-icons/fi";
 
+import {
+  getBudgetByUser,
+  createBudget,
+  updateBudget,
+} from "../services/budgetService";
+
 import { useEffect, useState } from "react";
 
 import { USER_ID } from "../constants/user";
 
-import {
-  getBudgetByUser,
-} from "../services/budgetService";
-
-import {
-  getExpensesByUser,
-} from "../services/expenseService";
+import { getExpensesByUser } from "../services/expenseService";
 
 export default function Budget() {
-  const [budget, setBudget] =
-    useState(null);
+  const [budget, setBudget] = useState(null);
 
-  const [expenses, setExpenses] =
-    useState([]);
+  const [expenses, setExpenses] = useState([]);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [loading, setLoading] = useState(true);
+
+  const [showModal, setShowModal] = useState(false);
+
+  const [budgetForm, setBudgetForm] = useState({
+    month: "May 2026",
+    totalBudget: budget?.totalBudget || "",
+    foodBudget: budget?.foodBudget || "",
+    travelBudget: budget?.travelBudget || "",
+    shoppingBudget: budget?.shoppingBudget || "",
+    billsBudget: budget?.billsBudget || "",
+  });
 
   useEffect(() => {
     loadData();
@@ -34,23 +42,13 @@ export default function Budget() {
 
   const loadData = async () => {
     try {
-      const budgetResponse =
-        await getBudgetByUser(
-          USER_ID
-        );
+      const budgetResponse = await getBudgetByUser(USER_ID);
 
-      const expenseResponse =
-        await getExpensesByUser(
-          USER_ID
-        );
+      const expenseResponse = await getExpensesByUser(USER_ID);
 
-      setBudget(
-        budgetResponse.data?.[0]
-      );
+      setBudget(budgetResponse.data?.[0]);
 
-      setExpenses(
-        expenseResponse.data || []
-      );
+      setExpenses(expenseResponse.data || []);
     } catch (error) {
       console.error(error);
     } finally {
@@ -58,408 +56,385 @@ export default function Budget() {
     }
   };
 
+  const handleSaveBudget = async () => {
+    try {
+      const payload = {
+        userId: USER_ID,
+        ...budgetForm,
+      };
+
+      if (budget?._id) {
+        await updateBudget(budget._id, payload);
+      } else {
+        await createBudget(payload);
+      }
+
+      await loadData();
+
+      setShowModal(false);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-[70vh]">
-          <h2 className="text-2xl text-slate-400">
-            Loading Budget...
-          </h2>
+          <h2 className="text-2xl text-slate-400">Loading Budget...</h2>
         </div>
       </DashboardLayout>
     );
   }
 
-  const totalBudget =
-    budget?.totalBudget || 0;
+  const totalBudget = budget?.totalBudget || 0;
 
-  const totalSpent =
-    expenses.reduce(
-      (sum, expense) =>
-        sum + expense.amount,
-      0
-    );
+  const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
 
-  const remaining =
-    totalBudget - totalSpent;
+  const remaining = Math.max(0, totalBudget - totalSpent);
 
   const utilization =
-    totalBudget > 0
-      ? Math.round(
-          (totalSpent /
-            totalBudget) *
-            100
-        )
-      : 0;
+    totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
 
   const categories = [
     {
       category: "Food",
-      budget:
-        budget?.foodBudget || 0,
+      budget: budget?.foodBudget || 0,
     },
     {
       category: "Travel",
-      budget:
-        budget?.travelBudget || 0,
+      budget: budget?.travelBudget || 0,
     },
     {
       category: "Shopping",
-      budget:
-        budget?.shoppingBudget ||
-        0,
+      budget: budget?.shoppingBudget || 0,
     },
     {
       category: "Bills",
-      budget:
-        budget?.billsBudget || 0,
+      budget: budget?.billsBudget || 0,
     },
   ];
 
-  const categoryData =
-    categories.map((item) => {
-      const spent =
-        expenses
-          .filter(
-            (expense) =>
-              expense.category?.toLowerCase() ===
-              item.category.toLowerCase()
-          )
-          .reduce(
-            (sum, expense) =>
-              sum + expense.amount,
-            0
-          );
+  const categoryData = categories.map((item) => {
+    const spent = expenses
+      .filter(
+        (expense) =>
+          expense.category?.toLowerCase() === item.category.toLowerCase(),
+      )
+      .reduce((sum, expense) => sum + expense.amount, 0);
 
-      return {
-        ...item,
-        spent,
-      };
-    });
+    return {
+      ...item,
+      spent,
+    };
+  });
+
+  // if (!budget) {
+  //   return (
+  //     <DashboardLayout>
+  //       <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center">
+  //         <h2 className="text-2xl font-bold">No Budget Found</h2>
+
+  //         <p className="text-slate-400 mt-2">
+  //           Create your first monthly budget
+  //         </p>
+  //       </div>
+  //     </DashboardLayout>
+  //   );
+  // }
 
   return (
     <DashboardLayout>
-
       {/* Header */}
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-
         <div>
-
-          <h1 className="text-4xl font-bold">
-            Budget Planner
-          </h1>
+          <h1 className="text-4xl font-bold">Budget Planner</h1>
 
           <p className="text-slate-400 mt-2">
             Plan, track and optimize your monthly budget
           </p>
-
         </div>
 
-        <button className="flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition">
-
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition"
+        >
           <FiPlus />
-
           Update Budget
-
         </button>
-
       </div>
 
       {/* Summary Cards */}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-
-          <p className="text-slate-400">
-            Monthly Budget
-          </p>
+          <p className="text-slate-400">Monthly Budget</p>
 
           <h3 className="text-3xl font-bold mt-2">
             ₹{totalBudget.toLocaleString()}
           </h3>
-
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-
-          <p className="text-slate-400">
-            Total Spent
-          </p>
+          <p className="text-slate-400">Total Spent</p>
 
           <h3 className="text-3xl font-bold text-red-400 mt-2">
             ₹{totalSpent.toLocaleString()}
           </h3>
-
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-
-          <p className="text-slate-400">
-            Remaining
-          </p>
+          <p className="text-slate-400">Remaining</p>
 
           <h3 className="text-3xl font-bold text-green-400 mt-2">
             ₹{remaining.toLocaleString()}
           </h3>
-
         </div>
-
       </div>
 
       {/* Budget Health */}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-8">
-
         <div className="xl:col-span-2 bg-white/5 border border-white/10 rounded-2xl p-6">
-
           <div className="flex items-center gap-3 mb-5">
+            <FiTrendingUp className="text-indigo-400" size={22} />
 
-            <FiTrendingUp
-              className="text-indigo-400"
-              size={22}
-            />
-
-            <h3 className="text-xl font-semibold">
-              Budget Health
-            </h3>
-
+            <h3 className="text-xl font-semibold">Budget Health</h3>
           </div>
 
           <div className="flex justify-between mb-3">
+            <span>Budget Utilization</span>
 
-            <span>
-              Budget Utilization
-            </span>
-
-            <span className="font-semibold">
-              {utilization}%
-            </span>
-
+            <span className="font-semibold">{utilization}%</span>
           </div>
 
           <div className="w-full bg-slate-700 rounded-full h-4">
-
             <div
               className="h-4 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500"
               style={{
                 width: `${utilization}%`,
               }}
             />
-
           </div>
 
           <div className="grid grid-cols-3 gap-4 mt-6">
-
             <div className="bg-white/5 rounded-xl p-4">
-
-              <p className="text-slate-400 text-sm">
-                Total Budget
-              </p>
+              <p className="text-slate-400 text-sm">Total Budget</p>
 
               <h4 className="text-xl font-bold mt-2">
                 ₹{totalBudget.toLocaleString()}
               </h4>
-
             </div>
 
             <div className="bg-white/5 rounded-xl p-4">
-
-              <p className="text-slate-400 text-sm">
-                Total Spent
-              </p>
+              <p className="text-slate-400 text-sm">Total Spent</p>
 
               <h4 className="text-xl font-bold mt-2">
                 ₹{totalSpent.toLocaleString()}
               </h4>
-
             </div>
 
             <div className="bg-white/5 rounded-xl p-4">
-
-              <p className="text-slate-400 text-sm">
-                Remaining
-              </p>
+              <p className="text-slate-400 text-sm">Remaining</p>
 
               <h4 className="text-xl font-bold mt-2 text-green-400">
                 ₹{remaining.toLocaleString()}
               </h4>
-
             </div>
-
           </div>
-
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-
-          <h3 className="text-xl font-semibold mb-5">
-            Budget Status
-          </h3>
+          <h3 className="text-xl font-semibold mb-5">Budget Status</h3>
 
           <div className="space-y-4">
+            {categoryData.map((item) => (
+              <div key={item.category} className="flex justify-between">
+                <span>{item.category}</span>
 
-            {categoryData.map(
-              (item) => (
-                <div
-                  key={
-                    item.category
-                  }
-                  className="flex justify-between"
-                >
-                  <span>
-                    {
-                      item.category
-                    }
-                  </span>
-
-                  <span className="text-cyan-400">
-                    ₹
-                    {item.spent.toLocaleString()}
-                  </span>
-                </div>
-              )
-            )}
-
+                <span className="text-cyan-400">
+                  ₹{item.spent.toLocaleString()}
+                </span>
+              </div>
+            ))}
           </div>
-
         </div>
-
       </div>
 
       {/* Category Budgets */}
 
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-
         <div className="flex items-center gap-3 mb-6">
+          <FiTarget className="text-cyan-400" size={22} />
 
-          <FiTarget
-            className="text-cyan-400"
-            size={22}
-          />
-
-          <h3 className="text-xl font-semibold">
-            Category Budgets
-          </h3>
-
+          <h3 className="text-xl font-semibold">Category Budgets</h3>
         </div>
 
         <div className="space-y-6">
+          {categoryData.map((item) => {
+            const percentage = Math.min(
+              100,
+              item.budget > 0
+                ? Math.round((item.spent / item.budget) * 100)
+                : 0,
+            );
 
-          {categoryData.map(
-            (item) => {
-              const percentage =
-                item.budget > 0
-                  ? Math.round(
-                      (item.spent /
-                        item.budget) *
-                        100
-                    )
-                  : 0;
+            return (
+              <div key={item.category}>
+                <div className="flex justify-between mb-2">
+                  <span className="font-medium">{item.category}</span>
 
-              return (
-                <div
-                  key={
-                    item.category
-                  }
-                >
-                  <div className="flex justify-between mb-2">
-
-                    <span className="font-medium">
-                      {
-                        item.category
-                      }
-                    </span>
-
-                    <span className="text-slate-400">
-                      ₹
-                      {item.spent.toLocaleString()}
-                      {" / "}
-                      ₹
-                      {item.budget.toLocaleString()}
-                    </span>
-
-                  </div>
-
-                  <div className="w-full bg-slate-700 rounded-full h-3">
-
-                    <div
-                      className="h-3 rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500"
-                      style={{
-                        width: `${percentage}%`,
-                      }}
-                    />
-
-                  </div>
-
-                  <div className="flex justify-between mt-2 text-sm">
-
-                    <span className="text-slate-400">
-                      {percentage}% used
-                    </span>
-
-                    <span className="text-green-400">
-                      ₹
-                      {(
-                        item.budget -
-                        item.spent
-                      ).toLocaleString()}
-                      {" "}left
-                    </span>
-
-                  </div>
-
+                  <span className="text-slate-400">
+                    ₹{item.spent.toLocaleString()}
+                    {" / "}₹{item.budget.toLocaleString()}
+                  </span>
                 </div>
-              );
-            }
-          )}
 
+                <div className="w-full bg-slate-700 rounded-full h-3">
+                  <div
+                    className="h-3 rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500"
+                    style={{
+                      width: `${percentage}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="flex justify-between mt-2 text-sm">
+                  <span className="text-slate-400">{percentage}% used</span>
+
+                  <span className="text-green-400">
+                    ₹{(item.budget - item.spent).toLocaleString()} left
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
-
       </div>
 
       {/* AI Insight */}
 
       <div className="mt-8 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-500/20 rounded-2xl p-6">
-
         <div className="flex items-center gap-3">
+          <FiAlertTriangle className="text-yellow-400" size={22} />
 
-          <FiAlertTriangle
-            className="text-yellow-400"
-            size={22}
-          />
-
-          <h3 className="text-xl font-semibold">
-            AI Budget Suggestion
-          </h3>
-
+          <h3 className="text-xl font-semibold">AI Budget Suggestion</h3>
         </div>
 
         <p className="text-slate-300 mt-4">
-
-          You have spent
-          {" "}
-          ₹{totalSpent.toLocaleString()}
-          {" "}
-          from your
-          {" "}
-          ₹{totalBudget.toLocaleString()}
-          {" "}
-          budget.
-
+          You have spent ₹{totalSpent.toLocaleString()} from your ₹
+          {totalBudget.toLocaleString()} budget.
         </p>
 
         <p className="text-green-400 mt-4 font-medium">
-
-          Remaining Budget:
-          {" "}
-          ₹{remaining.toLocaleString()}
-
+          Remaining Budget: ₹{remaining.toLocaleString()}
         </p>
-
       </div>
 
+      {showModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-slate-900 rounded-2xl p-6 w-full max-w-lg border border-slate-700">
+            <h2 className="text-2xl font-bold mb-5">Update Budget</h2>
+
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Month"
+                value={budgetForm.month}
+                onChange={(e) =>
+                  setBudgetForm({
+                    ...budgetForm,
+                    month: e.target.value,
+                  })
+                }
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+
+              <input
+                type="number"
+                placeholder="Total Budget"
+                value={budgetForm.totalBudget}
+                onChange={(e) =>
+                  setBudgetForm({
+                    ...budgetForm,
+                    totalBudget: e.target.value,
+                  })
+                }
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+
+              <input
+                type="number"
+                placeholder="Food Budget"
+                value={budgetForm.foodBudget}
+                onChange={(e) =>
+                  setBudgetForm({
+                    ...budgetForm,
+                    foodBudget: e.target.value,
+                  })
+                }
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+
+              <input
+                type="number"
+                placeholder="Travel Budget"
+                value={budgetForm.travelBudget}
+                onChange={(e) =>
+                  setBudgetForm({
+                    ...budgetForm,
+                    travelBudget: e.target.value,
+                  })
+                }
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+
+              <input
+                type="number"
+                placeholder="Shopping Budget"
+                value={budgetForm.shoppingBudget}
+                onChange={(e) =>
+                  setBudgetForm({
+                    ...budgetForm,
+                    shoppingBudget: e.target.value,
+                  })
+                }
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+
+              <input
+                type="number"
+                placeholder="Bills Budget"
+                value={budgetForm.billsBudget}
+                onChange={(e) =>
+                  setBudgetForm({
+                    ...budgetForm,
+                    billsBudget: e.target.value,
+                  })
+                }
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 rounded-lg bg-slate-700"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={handleSaveBudget}
+                className="px-4 py-2 rounded-lg bg-indigo-600"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }
