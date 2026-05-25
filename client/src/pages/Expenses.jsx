@@ -9,7 +9,9 @@ import {
   deleteExpense,
 } from "../services/expenseService";
 
-import { USER_ID } from "../constants/user";
+import { getUserId } from "../utils/auth";
+
+const userId = getUserId();
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
@@ -22,7 +24,11 @@ export default function Expenses() {
 
   const fetchExpenses = async () => {
     try {
-      const response = await getExpensesByUser(USER_ID);
+      const userId = getUserId();
+
+      if (!userId) return;
+
+      const response = await getExpensesByUser(userId);
 
       setExpenses(response.data || []);
     } catch (error) {
@@ -43,7 +49,7 @@ export default function Expenses() {
       }
 
       await createExpense({
-        userId: USER_ID,
+        userId: getUserId(),
         category: formData.category,
         amount: Number(formData.amount),
         note: formData.note,
@@ -55,7 +61,7 @@ export default function Expenses() {
         note: "",
       });
 
-      fetchExpenses();
+      await fetchExpenses();
     } catch (error) {
       console.error(error);
     }

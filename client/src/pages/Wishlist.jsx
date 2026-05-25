@@ -1,14 +1,15 @@
-import DashboardLayout from "../components/layout/DashboardLayout";
-import { FiPlus, FiTarget, FiCheckCircle } from "react-icons/fi";
 import { useState, useEffect } from "react";
+import DashboardLayout from "../components/layout/DashboardLayout";
+import { FiCheckCircle } from "react-icons/fi";
 import {
   getWishlistByUser,
   createWishlist,
   updateWishlist,
   deleteWishlist,
 } from "../services/wishlistService";
+import { getUserId } from "../utils/auth";
 
-import { USER_ID } from "../constants/user";
+// import { USER_ID } from "../constants/user";
 
 export default function Wishlist() {
   const [wishlist, setWishlist] = useState([]);
@@ -26,7 +27,11 @@ export default function Wishlist() {
 
   const loadWishlist = async () => {
     try {
-      const response = await getWishlistByUser(USER_ID);
+      const userId = getUserId();
+
+      if (!userId) return;
+
+      const response = await getWishlistByUser(userId);
 
       setWishlist(response.data || []);
     } catch (error) {
@@ -39,7 +44,7 @@ export default function Wishlist() {
     try {
       const payload = {
         ...formData,
-        userId: USER_ID,
+        userId: getUserId(),
       };
 
       if (editingId) {
@@ -115,7 +120,19 @@ export default function Wishlist() {
         </div>
 
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            setEditingId(null);
+
+            setFormData({
+              itemName: "",
+              targetAmount: "",
+              savedAmount: "",
+              priority: "Medium",
+              targetDate: "",
+            });
+
+            setShowModal(true);
+          }}
           className="bg-indigo-600 px-5 py-3 rounded-xl"
         >
           + Add Wishlist
@@ -293,7 +310,19 @@ export default function Wishlist() {
 
             <div className="flex justify-end gap-3 mt-6">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+
+                  setEditingId(null);
+
+                  setFormData({
+                    itemName: "",
+                    targetAmount: "",
+                    savedAmount: "",
+                    priority: "Medium",
+                    targetDate: "",
+                  });
+                }}
                 className="px-4 py-2 rounded-lg bg-slate-700"
               >
                 Cancel

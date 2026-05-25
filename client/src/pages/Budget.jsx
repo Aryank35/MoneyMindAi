@@ -14,9 +14,10 @@ import {
 
 import { useEffect, useState } from "react";
 
-import { USER_ID } from "../constants/user";
+// import { USER_ID } from "../constants/user";
 
 import { getExpensesByUser } from "../services/expenseService";
+import { getUserId } from "../utils/auth";
 
 export default function Budget() {
   const [budget, setBudget] = useState(null);
@@ -29,11 +30,11 @@ export default function Budget() {
 
   const [budgetForm, setBudgetForm] = useState({
     month: "May 2026",
-    totalBudget: budget?.totalBudget || "",
-    foodBudget: budget?.foodBudget || "",
-    travelBudget: budget?.travelBudget || "",
-    shoppingBudget: budget?.shoppingBudget || "",
-    billsBudget: budget?.billsBudget || "",
+    totalBudget: "",
+    foodBudget: "",
+    travelBudget: "",
+    shoppingBudget: "",
+    billsBudget: "",
   });
 
   useEffect(() => {
@@ -42,13 +43,38 @@ export default function Budget() {
 
   const loadData = async () => {
     try {
-      const budgetResponse = await getBudgetByUser(USER_ID);
+      const userId = getUserId();
 
-      const expenseResponse = await getExpensesByUser(USER_ID);
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
 
-      setBudget(budgetResponse.data?.[0]);
+      const budgetResponse = await getBudgetByUser(userId);
+
+      const expenseResponse = await getExpensesByUser(userId);
+
+      const currentBudget = budgetResponse.data?.[0] || null;
+
+      setBudget(currentBudget);
 
       setExpenses(expenseResponse.data || []);
+
+      if (currentBudget) {
+        setBudgetForm({
+          month: currentBudget.month || "May 2026",
+
+          totalBudget: currentBudget.totalBudget || "",
+
+          foodBudget: currentBudget.foodBudget || "",
+
+          travelBudget: currentBudget.travelBudget || "",
+
+          shoppingBudget: currentBudget.shoppingBudget || "",
+
+          billsBudget: currentBudget.billsBudget || "",
+        });
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -59,7 +85,7 @@ export default function Budget() {
   const handleSaveBudget = async () => {
     try {
       const payload = {
-        userId: USER_ID,
+        userId: getUserId(),
         ...budgetForm,
       };
 
@@ -157,7 +183,25 @@ export default function Budget() {
         </div>
 
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            if (budget) {
+              setBudgetForm({
+                month: budget.month || "May 2026",
+
+                totalBudget: budget.totalBudget || "",
+
+                foodBudget: budget.foodBudget || "",
+
+                travelBudget: budget.travelBudget || "",
+
+                shoppingBudget: budget.shoppingBudget || "",
+
+                billsBudget: budget.billsBudget || "",
+              });
+            }
+
+            setShowModal(true);
+          }}
           className="flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition"
         >
           <FiPlus />
