@@ -229,7 +229,7 @@ export default function Signup() {
           Already have an account?
 
           <Link
-            to="/login"
+            to="/"
             className="text-indigo-400 ml-2"
           >
             Login
