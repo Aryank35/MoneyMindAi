@@ -14,7 +14,7 @@ router.post(
 );
 
 router.post(
-  "/",
+  "/login",
   login
 );
 
