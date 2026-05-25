@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import {
+  useNavigate,
+  Link,
+} from "react-router-dom";
+import { loginUser } from "../services/authService";
 import { FcGoogle } from "react-icons/fc";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 
@@ -26,27 +30,53 @@ export default function Login() {
     }));
   };
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (
+    event
+  ) => {
     event.preventDefault();
 
     if (
       !formData.email.trim() ||
       !formData.password.trim()
     ) {
-      alert("Please fill all fields");
+      alert(
+        "Please fill all fields"
+      );
+
       return;
     }
 
     try {
       setLoading(true);
 
-      // API integration will come later
+      const response =
+        await loginUser(
+          formData
+        );
 
-      setTimeout(() => {
-        navigate("/dashboard");
-      }, 1000);
+      localStorage.setItem(
+        "token",
+        response.token
+      );
+
+      localStorage.setItem(
+        "user",
+        JSON.stringify(
+          response.user
+        )
+      );
+
+      navigate(
+        "/dashboard"
+      );
     } catch (error) {
       console.error(error);
+
+      alert(
+        error?.response?.data
+          ?.message ||
+        "Login failed"
+      );
     } finally {
       setLoading(false);
     }
@@ -236,9 +266,12 @@ export default function Login() {
 
           <p className="text-center text-slate-400 mt-6">
             Don't have an account?
-            <span className="text-indigo-400 cursor-pointer ml-2 hover:text-indigo-300">
+            <Link
+              to="/signup"
+              className="text-indigo-400 ml-2 hover:text-indigo-300"
+            >
               Create Account
-            </span>
+            </Link>
           </p>
 
           <p className="text-center text-xs text-slate-500 mt-8">
