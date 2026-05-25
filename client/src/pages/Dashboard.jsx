@@ -57,20 +57,38 @@ export default function Dashboard() {
   const savingsRate =
     totalBudget > 0
       ? Math.round(
-          (remainingBudget /
-            totalBudget) *
-            100
-        )
+        (remainingBudget /
+          totalBudget) *
+        100
+      )
       : 0;
 
   const budgetUsed =
     totalBudget > 0
       ? Math.round(
-          (totalExpenses /
-            totalBudget) *
-            100
-        )
+        (totalExpenses /
+          totalBudget) *
+        100
+      )
       : 0;
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+
+    if (hour < 12) {
+      return "Good Morning 🌅";
+    }
+
+    if (hour < 17) {
+      return "Good Afternoon ☀️";
+    }
+
+    if (hour < 21) {
+      return "Good Evening 🌇";
+    }
+
+    return "Good Night 🌙";
+  };
 
   return (
     <DashboardLayout>
@@ -81,7 +99,7 @@ export default function Dashboard() {
 
         <div>
           <p className="text-slate-400">
-            Good Evening 👋
+            {getGreeting()}
           </p>
 
           <h2 className="text-4xl font-bold">
