@@ -9,16 +9,14 @@ import {
 
 const budgetRoutes = express.Router();
 
+budgetRoutes.get("/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Budget Route Working",
+  });
+});
+
 budgetRoutes.post("/", createBudget);
-budgetRoutes.get(
-  "/test",
-  (req, res) => {
-    res.json({
-      message:
-        "Budget Route Working",
-    });
-  }
-);
 
 budgetRoutes.get("/user/:userId", getBudgetByUser);
 

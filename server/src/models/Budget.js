@@ -1,5 +1,24 @@
 import mongoose from "mongoose";
 
+const categorySchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    limit: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  {
+    _id: false,
+  },
+);
+
 const budgetSchema = new mongoose.Schema(
   {
     userId: {
@@ -16,19 +35,14 @@ const budgetSchema = new mongoose.Schema(
     totalBudget: {
       type: Number,
       required: true,
+      min: 0,
     },
 
-    foodBudget: Number,
-    travelBudget: Number,
-    shoppingBudget: Number,
-    billsBudget: Number,
+    categories: [categorySchema],
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-export default mongoose.model(
-  "Budget",
-  budgetSchema
-);
+export default mongoose.model("Budget", budgetSchema);

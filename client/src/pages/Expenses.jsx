@@ -11,7 +11,7 @@ import {
 
 import { getUserId } from "../utils/auth";
 
-const userId = getUserId();
+import { getBudgetByUser, updateBudget } from "../services/budgetService";
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
@@ -22,13 +22,21 @@ export default function Expenses() {
     note: "",
   });
 
+  const [budgetCategories, setBudgetCategories] = useState([]);
+
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+
+  const [newCategory, setNewCategory] = useState("");
+
+  const [budget, setBudget] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+
+  const [searchTerm, setSearchTerm] = useState("");
+
   const fetchExpenses = async () => {
     try {
-      const userId = getUserId();
-
-      if (!userId) return;
-
-      const response = await getExpensesByUser(userId);
+      const response = await getExpensesByUser(getUserId());
 
       setExpenses(response.data || []);
     } catch (error) {
@@ -39,7 +47,11 @@ export default function Expenses() {
   };
 
   useEffect(() => {
-    fetchExpenses();
+    const loadData = async () => {
+      await Promise.all([fetchExpenses(), fetchBudgetCategories()]);
+    };
+
+    loadData();
   }, []);
 
   const handleAddExpense = async () => {
@@ -48,11 +60,28 @@ export default function Expenses() {
         return;
       }
 
+      const amount = Number(formData.amount);
+
+      if (amount <= 0) {
+        alert("Amount must be greater than 0");
+
+        return;
+      }
+
+      if (!budget) {
+        alert("Please create a budget first");
+
+        return;
+      }
+
       await createExpense({
         userId: getUserId(),
-        category: formData.category,
-        amount: Number(formData.amount),
-        note: formData.note,
+
+        category: formData.category.trim().replace(/\s+/g, " "),
+
+        amount,
+
+        note: formData.note.trim(),
       });
 
       setFormData({
@@ -77,6 +106,42 @@ export default function Expenses() {
     }
   };
 
+  const fetchBudgetCategories = async () => {
+    try {
+      const response = await getBudgetByUser(getUserId());
+
+      const currentBudget = response.data?.[0];
+
+      setBudget(currentBudget);
+
+      const categories = currentBudget?.categories || [];
+
+      setBudgetCategories(categories);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-[70vh]">
+          <h2 className="text-2xl text-slate-400">Loading Expenses...</h2>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const hasBudget = !!budget;
+
+  const filteredExpenses = expenses.filter(
+    (expense) =>
+      expense.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      expense.note?.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
   return (
     <DashboardLayout>
       {/* Header */}
@@ -90,23 +155,120 @@ export default function Expenses() {
       </div>
 
       {/* Add Expense */}
-
+      {!hasBudget && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 p-4 rounded-2xl mb-6">
+          Please create a budget first to manage expense categories.
+        </div>
+      )}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8">
         <h2 className="text-xl font-semibold mb-5">Add Expense</h2>
 
         <div className="grid md:grid-cols-3 gap-4">
-          <input
-            type="text"
-            placeholder="Category"
-            value={formData.category}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                category: e.target.value,
-              })
-            }
-            className="bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500"
-          />
+          <div className="space-y-2">
+            <select
+              value={formData.category}
+              onChange={(e) => {
+                if (e.target.value === "__new__") {
+                  setShowNewCategoryInput(true);
+
+                  return;
+                }
+
+                setShowNewCategoryInput(false);
+
+                setFormData({
+                  ...formData,
+                  category: e.target.value,
+                });
+              }}
+              className="bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500 w-full"
+            >
+              <option value="">Select Category</option>
+
+              {budgetCategories.map((category) => (
+                <option key={category.name} value={category.name}>
+                  {category.name}
+                </option>
+              ))}
+
+              <option value="__new__">+ Add New Category</option>
+            </select>
+
+            {showNewCategoryInput && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="New Category"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="flex-1 bg-slate-800 rounded-xl p-3 border border-slate-700"
+                />
+
+                <button
+                  onClick={async () => {
+                    try {
+                      const cleanedName = newCategory
+                        .trim()
+                        .replace(/\s+/g, " ");
+
+                      if (!cleanedName) {
+                        return;
+                      }
+
+                      const exists = budgetCategories.some(
+                        (category) =>
+                          category.name.toLowerCase().trim() ===
+                          cleanedName.toLowerCase().trim(),
+                      );
+
+                      if (exists) {
+                        alert("Category already exists");
+
+                        return;
+                      }
+
+                      const updatedCategories = [
+                        ...budgetCategories,
+
+                        {
+                          name: cleanedName,
+                          limit: 0,
+                        },
+                      ];
+
+                      if (budget?._id) {
+                        await updateBudget(budget._id, {
+                          ...budget,
+                          categories: updatedCategories,
+                        });
+                      }
+
+                      setBudgetCategories(updatedCategories);
+
+                      setBudget({
+                        ...budget,
+                        categories: updatedCategories,
+                      });
+
+                      setFormData({
+                        ...formData,
+                        category: cleanedName,
+                      });
+
+                      setNewCategory("");
+
+                      setShowNewCategoryInput(false);
+                    } catch (error) {
+                      console.error(error);
+                    }
+                  }}
+                  className="px-4 rounded-xl bg-indigo-600"
+                >
+                  Add
+                </button>
+              </div>
+            )}
+          </div>
 
           <input
             type="number"
@@ -153,6 +315,8 @@ export default function Expenses() {
           <input
             type="text"
             placeholder="Search expenses..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white outline-none focus:border-indigo-500"
           />
         </div>
@@ -187,33 +351,43 @@ export default function Expenses() {
             </thead>
 
             <tbody>
-              {expenses?.map((expense) => (
-                <tr
-                  key={expense._id}
-                  className="border-b border-white/5 hover:bg-white/5 transition"
-                >
-                  <td className="p-5">
-                    {new Date(expense.expenseDate).toLocaleDateString()}
-                  </td>
+              {filteredExpenses?.length > 0 ? (
+                filteredExpenses.map((expense) => (
+                  <tr
+                    key={expense._id}
+                    className="border-b border-white/5 hover:bg-white/5 transition"
+                  >
+                    <td className="p-5">
+                      {expense.expenseDate
+                        ? new Date(expense.expenseDate).toLocaleDateString()
+                        : "N/A"}
+                    </td>
 
-                  <td className="p-5">{expense.category}</td>
+                    <td className="p-5">{expense.category}</td>
 
-                  <td className="p-5 text-slate-400">{expense.note}</td>
+                    <td className="p-5 text-slate-400">{expense.note}</td>
 
-                  <td className="p-5 text-right text-red-400 font-medium">
-                    ₹{expense.amount}
-                  </td>
+                    <td className="p-5 text-right text-red-400 font-medium">
+                      ₹{Number(expense.amount).toLocaleString()}
+                    </td>
 
-                  <td className="p-5 text-center">
-                    <button
-                      onClick={() => handleDeleteExpense(expense._id)}
-                      className="text-red-400 hover:text-red-300"
-                    >
-                      <FiTrash2 size={18} />
-                    </button>
+                    <td className="p-5 text-center">
+                      <button
+                        onClick={() => handleDeleteExpense(expense._id)}
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        <FiTrash2 size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" className="text-center p-10 text-slate-400">
+                    No expenses added yet
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

@@ -1,8 +1,66 @@
 import Budget from "../models/Budget.js";
 
+const validateCategories = (totalBudget, categories) => {
+  let totalCategoryLimit = 0;
+
+  const uniqueNames = new Set();
+
+  for (const category of categories) {
+    const name = category.name?.trim()?.toLowerCase();
+
+    const limit = Number(category.limit);
+
+    if (!name) {
+      return "Category name is required";
+    }
+
+    if (limit < 0) {
+      return "Category limit cannot be negative";
+    }
+
+    if (uniqueNames.has(name)) {
+      return `Duplicate category: ${category.name}`;
+    }
+
+    uniqueNames.add(name);
+
+    totalCategoryLimit += limit;
+  }
+
+  if (totalCategoryLimit > totalBudget) {
+    return "Category limits exceed total budget";
+  }
+
+  return null;
+};
+
 export const createBudget = async (req, res) => {
   try {
-    const budget = await Budget.create(req.body);
+    const { userId, month, totalBudget, categories } = req.body;
+
+    const validationError = validateCategories(
+      Number(totalBudget),
+      categories || [],
+    );
+
+    if (validationError) {
+      return res.status(400).json({
+        success: false,
+        message: validationError,
+      });
+    }
+
+    const cleanedCategories = categories.map((category) => ({
+      name: category.name.trim(),
+      limit: Number(category.limit),
+    }));
+
+    const budget = await Budget.create({
+      userId,
+      month,
+      totalBudget: Number(totalBudget),
+      categories: cleanedCategories,
+    });
 
     res.status(201).json({
       success: true,
@@ -38,15 +96,40 @@ export const getBudgetByUser = async (req, res) => {
 
 export const updateBudget = async (req, res) => {
   try {
-    const budget = await Budget.findByIdAndUpdate(
+    const { totalBudget, categories } = req.body;
+
+    const validationError = validateCategories(
+      Number(totalBudget),
+      categories || [],
+    );
+
+    if (validationError) {
+      return res.status(400).json({
+        success: false,
+        message: validationError,
+      });
+    }
+
+    const cleanedCategories = categories.map((category) => ({
+      name: category.name.trim(),
+      limit: Number(category.limit),
+    }));
+
+    const updatedBudget = await Budget.findByIdAndUpdate(
       req.params.id,
-      req.body,
-      { new: true }
+      {
+        ...req.body,
+        totalBudget: Number(totalBudget),
+        categories: cleanedCategories,
+      },
+      {
+        new: true,
+      },
     );
 
     res.json({
       success: true,
-      data: budget,
+      data: updatedBudget,
     });
   } catch (error) {
     res.status(500).json({

@@ -1,23 +1,15 @@
-import api from "./api";
+import api from "../config/api";
 
-export const registerUser =
-    async (data) => {
-        const response =
-            await api.post(
-                "/auth/register",
-                data
-            );
+import { API_ENDPOINTS } from "../config/endpoints";
 
-        return response.data;
-    };
+export const loginUser = async (data) => {
+  const response = await api.post(API_ENDPOINTS.AUTH.LOGIN, data);
 
-export const loginUser =
-    async (data) => {
-        const response =
-            await api.post(
-                "/auth/login",
-                data
-            );
+  return response.data;
+};
 
-        return response.data;
-    };
+export const registerUser = async (data) => {
+  const response = await api.post(API_ENDPOINTS.AUTH.REGISTER, data);
+
+  return response.data;
+};

@@ -9,6 +9,13 @@ import {
 
 const router = express.Router();
 
+router.get("/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Expense Route Working",
+  });
+});
+
 router.post("/", createExpense);
 
 router.get("/user/:userId", getExpensesByUser);

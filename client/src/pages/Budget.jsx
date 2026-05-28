@@ -31,12 +31,48 @@ export default function Budget() {
   const [budgetForm, setBudgetForm] = useState({
     month: "May 2026",
     totalBudget: "",
-    foodBudget: "",
-    travelBudget: "",
-    shoppingBudget: "",
-    billsBudget: "",
+    categories: [
+      {
+        name: "Food",
+        limit: "",
+      },
+    ],
   });
 
+  const handleAddCategory = () => {
+    setBudgetForm({
+      ...budgetForm,
+
+      categories: [
+        ...budgetForm.categories,
+
+        {
+          name: "",
+          limit: "",
+        },
+      ],
+    });
+  };
+
+  const handleCategoryChange = (index, field, value) => {
+    const updatedCategories = [...budgetForm.categories];
+
+    updatedCategories[index][field] = value;
+
+    setBudgetForm({
+      ...budgetForm,
+      categories: updatedCategories,
+    });
+  };
+
+  const handleRemoveCategory = (index) => {
+    const updated = budgetForm.categories.filter((_, i) => i !== index);
+
+    setBudgetForm({
+      ...budgetForm,
+      categories: updated,
+    });
+  };
   useEffect(() => {
     loadData();
   }, []);
@@ -66,13 +102,15 @@ export default function Budget() {
 
           totalBudget: currentBudget.totalBudget || "",
 
-          foodBudget: currentBudget.foodBudget || "",
-
-          travelBudget: currentBudget.travelBudget || "",
-
-          shoppingBudget: currentBudget.shoppingBudget || "",
-
-          billsBudget: currentBudget.billsBudget || "",
+          categories:
+            currentBudget.categories?.length > 0
+              ? currentBudget.categories
+              : [
+                  {
+                    name: "Food",
+                    limit: "",
+                  },
+                ],
         });
       }
     } catch (error) {
@@ -84,9 +122,21 @@ export default function Budget() {
 
   const handleSaveBudget = async () => {
     try {
+      if (isBudgetExceeded) {
+        alert("Category budgets exceed total budget");
+
+        return;
+      }
+
+      const cleanedCategories = budgetForm.categories.filter(
+        (item) => item.name.trim() && Number(item.limit) > 0,
+      );
+
       const payload = {
         userId: getUserId(),
-        ...budgetForm,
+        month: budgetForm.month,
+        totalBudget: Number(budgetForm.totalBudget),
+        categories: cleanedCategories,
       };
 
       if (budget?._id) {
@@ -120,55 +170,39 @@ export default function Budget() {
   const remaining = Math.max(0, totalBudget - totalSpent);
 
   const utilization =
-    totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
+    totalBudget > 0
+      ? Math.min(100, Math.max(0, Math.round((totalSpent / totalBudget) * 100)))
+      : 0;
 
-  const categories = [
-    {
-      category: "Food",
-      budget: budget?.foodBudget || 0,
-    },
-    {
-      category: "Travel",
-      budget: budget?.travelBudget || 0,
-    },
-    {
-      category: "Shopping",
-      budget: budget?.shoppingBudget || 0,
-    },
-    {
-      category: "Bills",
-      budget: budget?.billsBudget || 0,
-    },
-  ];
-
-  const categoryData = categories.map((item) => {
+  const categoryData = (budget?.categories || []).map((item) => {
     const spent = expenses
       .filter(
         (expense) =>
-          expense.category?.toLowerCase() === item.category.toLowerCase(),
+          expense.category?.toLowerCase().trim() ===
+          item.name?.toLowerCase().trim(),
       )
       .reduce((sum, expense) => sum + expense.amount, 0);
+
+    const percentage =
+      item.limit > 0
+        ? Math.min(100, Math.max(0, Math.round((spent / item.limit) * 100)))
+        : 0;
 
     return {
       ...item,
       spent,
+      percentage,
+      remaining: Math.max(0, item.limit - spent),
+      isOverBudget: spent > item.limit,
     };
   });
 
-  // if (!budget) {
-  //   return (
-  //     <DashboardLayout>
-  //       <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center">
-  //         <h2 className="text-2xl font-bold">No Budget Found</h2>
+  const totalCategoryLimit = budgetForm.categories.reduce(
+    (sum, item) => sum + Number(item.limit || 0),
+    0,
+  );
 
-  //         <p className="text-slate-400 mt-2">
-  //           Create your first monthly budget
-  //         </p>
-  //       </div>
-  //     </DashboardLayout>
-  //   );
-  // }
-
+  const isBudgetExceeded = totalCategoryLimit > Number(budgetForm.totalBudget);
   return (
     <DashboardLayout>
       {/* Header */}
@@ -190,13 +224,15 @@ export default function Budget() {
 
                 totalBudget: budget.totalBudget || "",
 
-                foodBudget: budget.foodBudget || "",
-
-                travelBudget: budget.travelBudget || "",
-
-                shoppingBudget: budget.shoppingBudget || "",
-
-                billsBudget: budget.billsBudget || "",
+                categories:
+                  budget.categories?.length > 0
+                    ? budget.categories
+                    : [
+                        {
+                          name: "Food",
+                          limit: "",
+                        },
+                      ],
               });
             }
 
@@ -239,7 +275,7 @@ export default function Budget() {
 
       {/* Budget Health */}
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-8">
+      <div className="mb-8">
         <div className="xl:col-span-2 bg-white/5 border border-white/10 rounded-2xl p-6">
           <div className="flex items-center gap-3 mb-5">
             <FiTrendingUp className="text-indigo-400" size={22} />
@@ -288,22 +324,6 @@ export default function Budget() {
             </div>
           </div>
         </div>
-
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-          <h3 className="text-xl font-semibold mb-5">Budget Status</h3>
-
-          <div className="space-y-4">
-            {categoryData.map((item) => (
-              <div key={item.category} className="flex justify-between">
-                <span>{item.category}</span>
-
-                <span className="text-cyan-400">
-                  ₹{item.spent.toLocaleString()}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Category Budgets */}
@@ -317,29 +337,31 @@ export default function Budget() {
 
         <div className="space-y-6">
           {categoryData.map((item) => {
-            const percentage = Math.min(
-              100,
-              item.budget > 0
-                ? Math.round((item.spent / item.budget) * 100)
-                : 0,
-            );
+            const percentage =
+              item.limit > 0
+                ? Math.min(100, Math.round((item.spent / item.limit) * 100))
+                : 0;
 
             return (
-              <div key={item.category}>
+              <div key={item.name}>
                 <div className="flex justify-between mb-2">
-                  <span className="font-medium">{item.category}</span>
+                  <span className="font-medium">{item.name}</span>
 
                   <span className="text-slate-400">
                     ₹{item.spent.toLocaleString()}
-                    {" / "}₹{item.budget.toLocaleString()}
+                    {" / "}₹{Number(item.limit).toLocaleString()}
                   </span>
                 </div>
 
                 <div className="w-full bg-slate-700 rounded-full h-3">
                   <div
-                    className="h-3 rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500"
+                    className={`h-3 rounded-full ${
+                      item.isOverBudget
+                        ? "bg-red-500"
+                        : "bg-gradient-to-r from-cyan-500 to-indigo-500"
+                    }`}
                     style={{
-                      width: `${percentage}%`,
+                      width: `${item.percentage}%`,
                     }}
                   />
                 </div>
@@ -348,7 +370,9 @@ export default function Budget() {
                   <span className="text-slate-400">{percentage}% used</span>
 
                   <span className="text-green-400">
-                    ₹{(item.budget - item.spent).toLocaleString()} left
+                    {item.isOverBudget
+                      ? `Over by ₹${(item.spent - item.limit).toLocaleString()}`
+                      : `₹${item.remaining.toLocaleString()} left`}
                   </span>
                 </div>
               </div>
@@ -382,83 +406,36 @@ export default function Budget() {
             <h2 className="text-2xl font-bold mb-5">Update Budget</h2>
 
             <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Month"
-                value={budgetForm.month}
-                onChange={(e) =>
-                  setBudgetForm({
-                    ...budgetForm,
-                    month: e.target.value,
-                  })
-                }
-                className="w-full bg-slate-800 p-3 rounded-xl"
-              />
+              {budgetForm.categories.map((category, index) => (
+                <div key={index} className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Category Name"
+                    value={category.name}
+                    onChange={(e) =>
+                      handleCategoryChange(index, "name", e.target.value)
+                    }
+                    className="bg-slate-800 p-3 rounded-xl"
+                  />
 
-              <input
-                type="number"
-                placeholder="Total Budget"
-                value={budgetForm.totalBudget}
-                onChange={(e) =>
-                  setBudgetForm({
-                    ...budgetForm,
-                    totalBudget: e.target.value,
-                  })
-                }
-                className="w-full bg-slate-800 p-3 rounded-xl"
-              />
+                  <input
+                    type="number"
+                    placeholder="Limit"
+                    value={category.limit}
+                    onChange={(e) =>
+                      handleCategoryChange(index, "limit", e.target.value)
+                    }
+                    className="bg-slate-800 p-3 rounded-xl"
+                  />
+                </div>
+              ))}
 
-              <input
-                type="number"
-                placeholder="Food Budget"
-                value={budgetForm.foodBudget}
-                onChange={(e) =>
-                  setBudgetForm({
-                    ...budgetForm,
-                    foodBudget: e.target.value,
-                  })
-                }
-                className="w-full bg-slate-800 p-3 rounded-xl"
-              />
-
-              <input
-                type="number"
-                placeholder="Travel Budget"
-                value={budgetForm.travelBudget}
-                onChange={(e) =>
-                  setBudgetForm({
-                    ...budgetForm,
-                    travelBudget: e.target.value,
-                  })
-                }
-                className="w-full bg-slate-800 p-3 rounded-xl"
-              />
-
-              <input
-                type="number"
-                placeholder="Shopping Budget"
-                value={budgetForm.shoppingBudget}
-                onChange={(e) =>
-                  setBudgetForm({
-                    ...budgetForm,
-                    shoppingBudget: e.target.value,
-                  })
-                }
-                className="w-full bg-slate-800 p-3 rounded-xl"
-              />
-
-              <input
-                type="number"
-                placeholder="Bills Budget"
-                value={budgetForm.billsBudget}
-                onChange={(e) =>
-                  setBudgetForm({
-                    ...budgetForm,
-                    billsBudget: e.target.value,
-                  })
-                }
-                className="w-full bg-slate-800 p-3 rounded-xl"
-              />
+              <button
+                onClick={handleAddCategory}
+                className="w-full py-3 rounded-xl border border-dashed border-indigo-500 text-indigo-400"
+              >
+                + Add Category
+              </button>
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
@@ -478,6 +455,11 @@ export default function Budget() {
             </div>
           </div>
         </div>
+      )}
+      {isBudgetExceeded && (
+        <p className="text-red-400 text-sm">
+          Category limits exceed total monthly budget
+        </p>
       )}
     </DashboardLayout>
   );
