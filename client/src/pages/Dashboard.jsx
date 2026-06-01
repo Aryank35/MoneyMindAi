@@ -86,34 +86,6 @@ export default function Dashboard() {
     return "Good Night 🌙";
   };
 
-  let financialScore = 100;
-
-  if (budgetUsed > 100) {
-    financialScore -= 40;
-  }
-
-  if (dailyUsage > 100) {
-    financialScore -= 15;
-  }
-
-  if (weeklyUsage > 100) {
-    financialScore -= 15;
-  }
-
-  financialScore = Math.max(
-    0,
-    financialScore
-  );
-
-  const healthMessage =
-    financialScore >= 80
-      ? "Excellent financial discipline"
-      : financialScore >= 60
-        ? "Good financial habits"
-        : financialScore >= 40
-          ? "Average financial health"
-          : "Needs budget improvement";
-
   const today =
     new Date()
       .toISOString()
@@ -188,6 +160,34 @@ export default function Dashboard() {
         (weekSpent / weeklyLimit) * 100
       )
       : 0;
+
+  let financialScore = 100;
+
+  if (budgetUsed > 100) {
+    financialScore -= 40;
+  }
+
+  if (dailyUsage > 100) {
+    financialScore -= 15;
+  }
+
+  if (weeklyUsage > 100) {
+    financialScore -= 15;
+  }
+
+  financialScore = Math.max(
+    0,
+    financialScore
+  );
+
+  const healthMessage =
+    financialScore >= 80
+      ? "Excellent financial discipline"
+      : financialScore >= 60
+        ? "Good financial habits"
+        : financialScore >= 40
+          ? "Average financial health"
+          : "Needs budget improvement";
 
   return (
     <DashboardLayout>
