@@ -38,6 +38,11 @@ export default function Analytics() {
             const userId =
                 getUserId();
 
+            if (!userId) {
+                setLoading(false);
+                return;
+            }
+
             const expenseRes =
                 await getExpensesByUser(
                     userId
@@ -66,6 +71,18 @@ export default function Analytics() {
     useEffect(() => {
         loadData();
     }, []);
+
+    if (loading) {
+        return (
+            <DashboardLayout>
+                <div className="flex items-center justify-center h-[70vh]">
+                    <h2 className="text-2xl font-semibold text-slate-400">
+                        Loading Analytics...
+                    </h2>
+                </div>
+            </DashboardLayout>
+        );
+    }
 
     const categorySummary =
         {};
@@ -222,16 +239,6 @@ export default function Analytics() {
         0,
         totalBudget - totalSpent
     );
-
-    if (loading) {
-        return (
-            <DashboardLayout>
-                <div className="flex items-center justify-center h-[70vh]">
-                    Loading Analytics...
-                </div>
-            </DashboardLayout>
-        );
-    }
 
     return (
         <DashboardLayout>
