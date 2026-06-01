@@ -51,12 +51,18 @@ export default function Dashboard() {
 
   const remainingBudget = dashboardData?.remainingBudget || 0;
 
+  const dailyLimit =
+    dashboardData?.dailyLimit || 0;
+
+  const weeklyLimit =
+    dashboardData?.weeklyLimit || 0;
+
   const savingsRate =
     totalBudget > 0
       ? Math.min(
-          100,
-          Math.max(0, Math.round((remainingBudget / totalBudget) * 100)),
-        )
+        100,
+        Math.max(0, Math.round((remainingBudget / totalBudget) * 100)),
+      )
       : 0;
 
   const budgetUsed =
@@ -80,14 +86,108 @@ export default function Dashboard() {
     return "Good Night 🌙";
   };
 
+  let financialScore = 100;
+
+  if (budgetUsed > 100) {
+    financialScore -= 40;
+  }
+
+  if (dailyUsage > 100) {
+    financialScore -= 15;
+  }
+
+  if (weeklyUsage > 100) {
+    financialScore -= 15;
+  }
+
+  financialScore = Math.max(
+    0,
+    financialScore
+  );
+
   const healthMessage =
-    savingsRate >= 80
+    financialScore >= 80
       ? "Excellent financial discipline"
-      : savingsRate >= 60
+      : financialScore >= 60
         ? "Good financial habits"
-        : savingsRate >= 40
+        : financialScore >= 40
           ? "Average financial health"
           : "Needs budget improvement";
+
+  const today =
+    new Date()
+      .toISOString()
+      .split("T")[0];
+
+  const todaySpent =
+    (
+      dashboardData?.expenses || []
+    )
+      .filter(
+        (expense) =>
+          expense.expenseDate
+            ?.split("T")[0] ===
+          today
+      )
+      .reduce(
+        (
+          sum,
+          expense
+        ) =>
+          sum +
+          expense.amount,
+        0
+      );
+
+  const dailyUsage =
+    dailyLimit > 0
+      ? Math.round(
+        (todaySpent /
+          dailyLimit) *
+        100
+      )
+      : 0;
+
+  const currentDate =
+    new Date();
+
+  const firstDayOfWeek =
+    new Date(
+      currentDate
+    );
+
+  firstDayOfWeek.setDate(
+    currentDate.getDate() -
+    currentDate.getDay()
+  );
+
+  const weekSpent =
+    (
+      dashboardData?.expenses || []
+    )
+      .filter(
+        (expense) =>
+          new Date(
+            expense.expenseDate
+          ) >=
+          firstDayOfWeek
+      )
+      .reduce(
+        (
+          sum,
+          expense
+        ) =>
+          sum +
+          expense.amount,
+        0
+      );
+
+  const weeklyUsage =
+    weeklyLimit > 0
+      ? Math.round(
+        (weekSpent / weeklyLimit) * 100
+      )
+      : 0;
 
   return (
     <DashboardLayout>
@@ -136,16 +236,50 @@ export default function Dashboard() {
           </div>
 
           <div className="text-right">
-            <h2 className="text-5xl font-bold text-green-400">{savingsRate}</h2>
+            <h2 className="text-5xl font-bold text-green-400">
+              {financialScore}
+            </h2>
 
             <p className="text-slate-400">out of 100</p>
           </div>
         </div>
       </div>
 
+      {
+        dailyUsage > 100 && (
+          <div className="mt-6 bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
+            <h3 className="text-red-400 font-semibold">
+              ⚠ Daily Budget Exceeded
+            </h3>
+
+            <p className="text-slate-300 mt-2">
+              You have spent ₹
+              {todaySpent.toLocaleString()}
+              today against your limit of ₹
+              {dailyLimit.toLocaleString()}.
+            </p>
+          </div>
+        )
+      }
+
+      {weeklyUsage > 100 && (
+        <div className="mt-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl p-5">
+          <h3 className="text-orange-400 font-semibold">
+            ⚠ Weekly Budget Exceeded
+          </h3>
+
+          <p className="text-slate-300 mt-2">
+            You have spent ₹
+            {weekSpent.toLocaleString()}
+            this week against your limit of ₹
+            {weeklyLimit.toLocaleString()}.
+          </p>
+        </div>
+      )}
+
       {/* Summary Cards */}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-5 mt-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8 gap-5 mt-8">
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
           <p className="text-slate-400 text-sm">Total Budget</p>
 
@@ -155,9 +289,69 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+          <p className="text-slate-400 text-sm">
+            Today's Spending
+          </p>
+
+          <h3 className="text-3xl font-bold mt-2 text-orange-400">
+            ₹{todaySpent.toLocaleString()}
+          </h3>
+
+          <p className="text-xs text-slate-400 mt-2">
+            Limit ₹
+            {dailyLimit.toLocaleString()}
+          </p>
+
+          <div className="w-full bg-slate-700 rounded-full h-2 mt-3">
+            <div
+              className={`h-2 rounded-full ${dailyUsage > 100
+                ? "bg-red-500"
+                : "bg-orange-500"
+                }`}
+              style={{
+                width: `${Math.min(
+                  dailyUsage,
+                  100
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+          <p className="text-slate-400 text-sm">
+            Weekly Spending
+          </p>
+
+          <h3 className="text-3xl font-bold mt-2 text-cyan-400">
+            ₹{weekSpent.toLocaleString()}
+          </h3>
+
+          <p className="text-xs text-slate-400 mt-2">
+            Limit ₹
+            {weeklyLimit.toLocaleString()}
+          </p>
+
+          <div className="w-full bg-slate-700 rounded-full h-2 mt-3">
+            <div
+              className={`h-2 rounded-full ${weeklyUsage > 100
+                ? "bg-red-500"
+                : "bg-cyan-500"
+                }`}
+              style={{
+                width: `${Math.min(
+                  weeklyUsage,
+                  100
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
           <p className="text-slate-400 text-sm">Monthly Income</p>
 
-          <h3 className="text-3xl font-bold mt-2 text-cyan-400">₹50,000</h3>
+          <h3 className="text-3xl font-bold mt-2 text-cyan-400">₹{dashboardData?.totalIncome?.toLocaleString() || 0}</h3>
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
@@ -305,9 +499,22 @@ export default function Dashboard() {
             remaining budget is ₹{remainingBudget.toLocaleString()}.
           </p>
 
-          <p className="text-green-400 mt-4 font-medium">
-            Savings Rate: {savingsRate}%
-          </p>
+          <div className="mt-4 text-sm space-y-2">
+            <p>
+              📅 Today Spent:
+              ₹{todaySpent.toLocaleString()}
+            </p>
+
+            <p>
+              📊 This Week:
+              ₹{weekSpent.toLocaleString()}
+            </p>
+
+            <p>
+              💰 Remaining:
+              ₹{remainingBudget.toLocaleString()}
+            </p>
+          </div>
         </div>
       </div>
     </DashboardLayout>

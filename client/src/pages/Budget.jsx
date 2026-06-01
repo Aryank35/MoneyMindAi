@@ -65,14 +65,6 @@ export default function Budget() {
     });
   };
 
-  const handleRemoveCategory = (index) => {
-    const updated = budgetForm.categories.filter((_, i) => i !== index);
-
-    setBudgetForm({
-      ...budgetForm,
-      categories: updated,
-    });
-  };
   useEffect(() => {
     loadData();
   }, []);
@@ -106,11 +98,11 @@ export default function Budget() {
             currentBudget.categories?.length > 0
               ? currentBudget.categories
               : [
-                  {
-                    name: "Food",
-                    limit: "",
-                  },
-                ],
+                {
+                  name: "Food",
+                  limit: "",
+                },
+              ],
         });
       }
     } catch (error) {
@@ -132,11 +124,41 @@ export default function Budget() {
         (item) => item.name.trim() && Number(item.limit) > 0,
       );
 
+      const daysInMonth =
+        new Date(
+          new Date().getFullYear(),
+          new Date().getMonth() + 1,
+          0
+        ).getDate();
+
+      const totalBudgetValue =
+        Number(budgetForm.totalBudget);
+
+      const dailyLimit =
+        Math.round(
+          totalBudgetValue /
+          daysInMonth
+        );
+
+      const weeklyLimit =
+        Math.round(
+          totalBudgetValue / 4
+        );
+
       const payload = {
         userId: getUserId(),
+
         month: budgetForm.month,
-        totalBudget: Number(budgetForm.totalBudget),
-        categories: cleanedCategories,
+
+        totalBudget:
+          totalBudgetValue,
+
+        dailyLimit,
+
+        weeklyLimit,
+
+        categories:
+          cleanedCategories,
       };
 
       if (budget?._id) {
@@ -228,11 +250,11 @@ export default function Budget() {
                   budget.categories?.length > 0
                     ? budget.categories
                     : [
-                        {
-                          name: "Food",
-                          limit: "",
-                        },
-                      ],
+                      {
+                        name: "Food",
+                        limit: "",
+                      },
+                    ],
               });
             }
 
@@ -355,11 +377,10 @@ export default function Budget() {
 
                 <div className="w-full bg-slate-700 rounded-full h-3">
                   <div
-                    className={`h-3 rounded-full ${
-                      item.isOverBudget
-                        ? "bg-red-500"
-                        : "bg-gradient-to-r from-cyan-500 to-indigo-500"
-                    }`}
+                    className={`h-3 rounded-full ${item.isOverBudget
+                      ? "bg-red-500"
+                      : "bg-gradient-to-r from-cyan-500 to-indigo-500"
+                      }`}
                     style={{
                       width: `${item.percentage}%`,
                     }}
@@ -406,8 +427,21 @@ export default function Budget() {
             <h2 className="text-2xl font-bold mb-5">Update Budget</h2>
 
             <div className="space-y-4">
+              <input
+                type="number"
+                placeholder="Total Budget"
+                value={budgetForm.totalBudget}
+                onChange={(e) =>
+                  setBudgetForm({
+                    ...budgetForm,
+                    totalBudget:
+                      e.target.value,
+                  })
+                }
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
               {budgetForm.categories.map((category, index) => (
-                <div key={index} className="grid grid-cols-2 gap-3">
+                <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-3">
                   <input
                     type="text"
                     placeholder="Category Name"
@@ -427,6 +461,16 @@ export default function Budget() {
                     }
                     className="bg-slate-800 p-3 rounded-xl"
                   />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleRemoveCategory(index)
+                    }
+                    className="bg-red-500/20 text-red-400 px-3 rounded-xl"
+                  >
+                    ✕
+                  </button>
                 </div>
               ))}
 
@@ -436,6 +480,7 @@ export default function Budget() {
               >
                 + Add Category
               </button>
+
             </div>
 
             <div className="flex justify-end gap-3 mt-6">

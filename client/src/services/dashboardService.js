@@ -22,9 +22,19 @@ export const getDashboardData = async (userId) => {
 
   return {
     totalBudget,
+
     totalExpenses,
+
     remainingBudget,
+
+    dailyLimit:
+      budget?.dailyLimit || 0,
+
+    weeklyLimit:
+      budget?.weeklyLimit || 0,
+
     expenses,
+
     budget,
   };
 };

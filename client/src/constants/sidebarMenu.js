@@ -4,6 +4,7 @@ import {
   FiTarget,
   FiHeart,
   FiTrendingUp,
+  FiBarChart2,
 } from "react-icons/fi";
 
 export const SIDEBAR_MENU = [
@@ -32,4 +33,9 @@ export const SIDEBAR_MENU = [
     path: "/investments",
     icon: FiTrendingUp,
   },
+  {
+    label: "Analytics",
+    path: "/analytics",
+    icon: FiBarChart2
+  }
 ];

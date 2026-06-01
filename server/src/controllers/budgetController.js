@@ -34,6 +34,33 @@ const validateCategories = (totalBudget, categories) => {
   return null;
 };
 
+const calculateLimits = (
+  totalBudget
+) => {
+  const now =
+    new Date();
+
+  const daysInMonth =
+    new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0
+    ).getDate();
+
+  return {
+    dailyLimit:
+      Math.round(
+        totalBudget /
+        daysInMonth
+      ),
+
+    weeklyLimit:
+      Math.round(
+        totalBudget / 4
+      ),
+  };
+};
+
 export const createBudget = async (req, res) => {
   try {
     const { userId, month, totalBudget, categories } = req.body;
@@ -55,12 +82,29 @@ export const createBudget = async (req, res) => {
       limit: Number(category.limit),
     }));
 
-    const budget = await Budget.create({
-      userId,
-      month,
-      totalBudget: Number(totalBudget),
-      categories: cleanedCategories,
-    });
+    const {
+      dailyLimit,
+      weeklyLimit,
+    } = calculateLimits(
+      Number(totalBudget)
+    );
+
+    const budget =
+      await Budget.create({
+        userId,
+        month,
+
+        totalBudget:
+          Number(
+            totalBudget
+          ),
+
+        dailyLimit,
+        weeklyLimit,
+
+        categories:
+          cleanedCategories,
+      });
 
     res.status(201).json({
       success: true,
