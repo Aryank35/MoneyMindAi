@@ -15,38 +15,10 @@ import {
 } from "react";
 
 
-const loadData = async () => {
-    try {
-        const userId =
-            getUserId();
-
-        const expenseRes =
-            await getExpensesByUser(
-                userId
-            );
-
-        const budgetRes =
-            await getBudgetByUser(
-                userId
-            );
-
-        setExpenses(
-            expenseRes.data || []
-        );
-
-        setBudget(
-            budgetRes.data?.[0] ||
-            null
-        );
-    } catch (error) {
-        console.error(error);
-    } finally {
-        setLoading(false);
-    }
-};
 
 
 export default function Analytics() {
+
     const [expenses, setExpenses] =
         useState([]);
 
@@ -60,6 +32,36 @@ export default function Analytics() {
 
     const [loading, setLoading] =
         useState(true);
+
+    const loadData = async () => {
+        try {
+            const userId =
+                getUserId();
+
+            const expenseRes =
+                await getExpensesByUser(
+                    userId
+                );
+
+            const budgetRes =
+                await getBudgetByUser(
+                    userId
+                );
+
+            setExpenses(
+                expenseRes.data || []
+            );
+
+            setBudget(
+                budgetRes.data?.[0] ||
+                null
+            );
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
         loadData();
@@ -160,21 +162,17 @@ export default function Analytics() {
             0
         ).getDate();
 
+    const sortedDays =
+        Object.entries(expensesByDate)
+            .sort((a, b) => b[1] - a[1]);
+
     const highestDay =
-        Object.entries(
-            expensesByDate
-        ).sort(
-            (a, b) =>
-                b[1] - a[1]
-        )[0];
+        sortedDays[0] || [null, 0];
 
     const lowestDay =
-        Object.entries(
-            expensesByDate
-        ).sort(
-            (a, b) =>
-                a[1] - b[1]
-        )[0];
+        sortedDays.length
+            ? [...sortedDays].sort((a, b) => a[1] - b[1])[0]
+            : [null, 0];
 
     const calendarDays =
         Array.from(
@@ -201,13 +199,12 @@ export default function Analytics() {
         return "bg-red-500/20";
     };
 
-    const selectedExpenses =
-        expenses.filter(
-            (expense) =>
-                expense.expenseDate
-                    ?.split("T")[0] ===
-                selectedDate
-        );
+    const selectedExpenses = expenses.filter(
+        (expense) =>
+            new Date(expense.expenseDate)
+                .toISOString()
+                .split("T")[0] === selectedDate
+    );
 
     const totalSpent =
         expenses.reduce(
@@ -221,9 +218,10 @@ export default function Analytics() {
         0;
 
 
-    const remaining =
-        totalBudget -
-        totalSpent;
+    const remaining = Math.max(
+        0,
+        totalBudget - totalSpent
+    );
 
     if (loading) {
         return (
@@ -465,7 +463,11 @@ export default function Analytics() {
                                 {selectedDate}
                             </h3>
 
-                            {selectedExpenses.map(
+                            {selectedExpenses.length === 0 ? (
+                                <p className="text-slate-400">
+                                    No expenses on this day
+                                </p>
+                            ) : selectedExpenses.map(
                                 (
                                     expense
                                 ) => (
