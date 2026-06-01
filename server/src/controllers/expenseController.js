@@ -14,37 +14,15 @@ const validateExpense = ({ category, amount }) => {
 
 export const createExpense = async (req, res) => {
   try {
-    const { userId, category, amount, note, expenseDate } = req.body;
 
-    const validationError = validateExpense({
-      category,
-      amount,
-    });
-
-    if (validationError) {
-      return res.status(400).json({
-        success: false,
-        message: validationError,
-      });
-    }
-
-    const expense = await Expense.create({
-      userId,
-
-      category: category.trim(),
-
-      amount: Number(amount),
-
-      note: note?.trim() || "",
-
-      expenseDate: expenseDate || Date.now(),
-    });
+    const expense = await Expense.create(req.body);
 
     res.status(201).json({
       success: true,
       data: expense,
     });
   } catch (error) {
+    console.error("Expense Error:", error);
     res.status(500).json({
       success: false,
       message: error.message,

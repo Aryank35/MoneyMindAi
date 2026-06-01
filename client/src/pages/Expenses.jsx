@@ -17,13 +17,13 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
 
   const [formData, setFormData] = useState({
+    account: "Primary",
     category: "",
     amount: "",
     note: "",
     date: new Date().toISOString().split("T")[0],
     time: new Date().toTimeString().slice(0, 5),
   });
-
   const [budgetCategories, setBudgetCategories] = useState([]);
 
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
@@ -45,6 +45,30 @@ export default function Expenses() {
   const [maxAmount, setMaxAmount] = useState("");
 
   const [showFilters, setShowFilters] = useState(false);
+
+  const [selectedAccount, setSelectedAccount] = useState("all");
+
+  const [accounts, setAccounts] = useState([
+    {
+      _id: "primary",
+      name: "Primary",
+    },
+    {
+      _id: "cash",
+      name: "Cash",
+      balance: 0,
+      color: "#10B981",
+      icon: "💵",
+    },
+    {
+      _id: "upi",
+      name: "UPI",
+    },
+  ]);
+
+  const [showAccountInput, setShowAccountInput] = useState(false);
+
+  const [newAccount, setNewAccount] = useState("");
 
   const fetchExpenses = async () => {
     try {
@@ -86,27 +110,32 @@ export default function Expenses() {
         return;
       }
 
+      if (!formData.account) {
+        alert("Please select account");
+        return;
+      }
+
       const expenseDate = new Date(`${formData.date}T${formData.time}`);
 
       await createExpense({
         userId: getUserId(),
 
-        category: formData.category.trim().replace(/\s+/g, " "),
+        accountId: formData.account,
+
+        category: formData.category,
 
         amount,
 
-        note: formData.note.trim(),
+        note: formData.note,
 
         expenseDate,
       });
-
       setFormData({
+        account: formData.account,
         category: "",
         amount: "",
         note: "",
-
         date: new Date().toISOString().split("T")[0],
-
         time: new Date().toTimeString().slice(0, 5),
       });
 
@@ -144,6 +173,11 @@ export default function Expenses() {
     }
   };
 
+  const accountFilteredExpenses =
+    selectedAccount === "all"
+      ? expenses
+      : expenses.filter((expense) => expense.accountId === selectedAccount);
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -156,7 +190,7 @@ export default function Expenses() {
 
   const hasBudget = !!budget;
 
-  const filteredExpenses = expenses.filter((expense) => {
+  const filteredExpenses = accountFilteredExpenses.filter((expense) => {
     const matchesSearch =
       expense.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       expense.note?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -209,6 +243,81 @@ export default function Expenses() {
         <h2 className="text-xl font-semibold mb-5">Add Expense</h2>
 
         <div className="grid md:grid-cols-3 gap-4">
+          <select
+            value={formData.account}
+            onChange={(e) => {
+              if (e.target.value === "__new_account__") {
+                setShowAccountInput(true);
+                return;
+              }
+
+              setFormData({
+                ...formData,
+                account: e.target.value,
+              });
+            }}
+            className="bg-slate-800 rounded-xl p-3 border border-slate-700"
+          >
+            {accounts.map((account) => (
+              <option key={account._id} value={account._id}>
+                {account.name}
+              </option>
+            ))}
+
+            <option value="__new_account__">+ Add Account</option>
+          </select>
+
+          {showAccountInput && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Account Name"
+                value={newAccount}
+                onChange={(e) => setNewAccount(e.target.value)}
+                className="flex-1 bg-slate-800 rounded-xl p-3"
+              />
+
+              <button
+                onClick={() => {
+                  const cleanedName = newAccount.trim();
+
+                  if (!cleanedName) {
+                    alert("Enter account name");
+                    return;
+                  }
+
+                  const exists = accounts.some(
+                    (account) =>
+                      account.name.toLowerCase() === cleanedName.toLowerCase(),
+                  );
+
+                  if (exists) {
+                    alert("Account already exists");
+                    return;
+                  }
+                  const account = {
+                    _id: Date.now().toString(),
+                    name: cleanedName,
+                  };
+
+                  setAccounts([...accounts, account]);
+
+                  setFormData({
+                    ...formData,
+                    account: account._id,
+                  });
+
+                  setNewAccount("");
+
+                  setShowAccountInput(false);
+                }}
+                className="bg-indigo-600 px-4 rounded-xl"
+              >
+                Add
+              </button>
+            </div>
+          )}
+
           <div className="space-y-2">
             <select
               value={formData.category}
@@ -412,6 +521,19 @@ export default function Expenses() {
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6">
           <div className="grid md:grid-cols-4 gap-4">
             <select
+              value={selectedAccount}
+              onChange={(e) => setSelectedAccount(e.target.value)}
+              className="bg-slate-800 p-3 rounded-xl"
+            >
+              <option value="all">All Accounts</option>
+
+              {accounts.map((account) => (
+                <option key={account._id} value={account._id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+            <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="bg-slate-800 p-3 rounded-xl"
@@ -455,6 +577,7 @@ export default function Expenses() {
               setSelectedMonth("");
               setMinAmount("");
               setMaxAmount("");
+              setSelectedAccount("all");
             }}
             className="mt-4 px-4 py-2 rounded-xl bg-red-600"
           >
@@ -481,6 +604,8 @@ export default function Expenses() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/10 text-slate-400">
+                <th className="text-left p-5">Account</th>
+
                 <th className="text-left p-5">Date</th>
 
                 <th className="text-left p-5">Category</th>
@@ -500,6 +625,11 @@ export default function Expenses() {
                     key={expense._id}
                     className="border-b border-white/5 hover:bg-white/5 transition"
                   >
+                    <td className="p-5">
+                      {accounts.find((a) => a._id === expense.accountId)
+                        ?.name || "Unknown"}
+                    </td>
+
                     <td className="p-5">
                       {expense.expenseDate
                         ? new Date(expense.expenseDate).toLocaleString()
@@ -526,7 +656,7 @@ export default function Expenses() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="5" className="text-center p-10 text-slate-400">
+                  <td colSpan="6" className="text-center p-10 text-slate-400">
                     No expenses added yet
                   </td>
                 </tr>

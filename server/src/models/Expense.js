@@ -8,23 +8,24 @@ const expenseSchema = new mongoose.Schema(
       required: true,
     },
 
+    accountId: {
+      type: String,
+      default: "Primary",
+    },
+
     category: {
       type: String,
       required: true,
-      trim: true,
     },
 
     amount: {
       type: Number,
       required: true,
-      min: 1,
     },
 
     note: {
       type: String,
       default: "",
-      maxlength: 200,
-      trim: true,
     },
 
     expenseDate: {
