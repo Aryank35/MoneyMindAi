@@ -20,6 +20,8 @@ export default function Expenses() {
     category: "",
     amount: "",
     note: "",
+    date: new Date().toISOString().split("T")[0],
+    time: new Date().toTimeString().slice(0, 5),
   });
 
   const [budgetCategories, setBudgetCategories] = useState([]);
@@ -33,6 +35,16 @@ export default function Expenses() {
   const [loading, setLoading] = useState(true);
 
   const [searchTerm, setSearchTerm] = useState("");
+
+  const [selectedCategory, setSelectedCategory] = useState("");
+
+  const [selectedMonth, setSelectedMonth] = useState("");
+
+  const [minAmount, setMinAmount] = useState("");
+
+  const [maxAmount, setMaxAmount] = useState("");
+
+  const [showFilters, setShowFilters] = useState(false);
 
   const fetchExpenses = async () => {
     try {
@@ -74,6 +86,8 @@ export default function Expenses() {
         return;
       }
 
+      const expenseDate = new Date(`${formData.date}T${formData.time}`);
+
       await createExpense({
         userId: getUserId(),
 
@@ -82,12 +96,18 @@ export default function Expenses() {
         amount,
 
         note: formData.note.trim(),
+
+        expenseDate,
       });
 
       setFormData({
         category: "",
         amount: "",
         note: "",
+
+        date: new Date().toISOString().split("T")[0],
+
+        time: new Date().toTimeString().slice(0, 5),
       });
 
       await fetchExpenses();
@@ -136,10 +156,35 @@ export default function Expenses() {
 
   const hasBudget = !!budget;
 
-  const filteredExpenses = expenses.filter(
-    (expense) =>
+  const filteredExpenses = expenses.filter((expense) => {
+    const matchesSearch =
       expense.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.note?.toLowerCase().includes(searchTerm.toLowerCase()),
+      expense.note?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesCategory =
+      !selectedCategory || expense.category === selectedCategory;
+
+    const matchesMonth =
+      !selectedMonth || expense.expenseDate?.startsWith(selectedMonth);
+
+    const matchesMin =
+      !minAmount || Number(expense.amount) >= Number(minAmount);
+
+    const matchesMax =
+      !maxAmount || Number(expense.amount) <= Number(maxAmount);
+
+    return (
+      matchesSearch &&
+      matchesCategory &&
+      matchesMonth &&
+      matchesMin &&
+      matchesMax
+    );
+  });
+
+  const filteredTotal = filteredExpenses.reduce(
+    (sum, expense) => sum + expense.amount,
+    0,
   );
 
   return (
@@ -296,6 +341,39 @@ export default function Expenses() {
             className="bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500"
           />
         </div>
+        <div className="grid md:grid-cols-2 gap-4 mt-4">
+          <div>
+            <label className="block mb-2 text-slate-400">Expense Date</label>
+
+            <input
+              type="date"
+              value={formData.date}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  date: e.target.value,
+                })
+              }
+              className="w-full bg-slate-800 rounded-xl p-3 border border-slate-700"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-2 text-slate-400">Expense Time</label>
+
+            <input
+              type="time"
+              value={formData.time}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  time: e.target.value,
+                })
+              }
+              className="w-full bg-slate-800 rounded-xl p-3 border border-slate-700"
+            />
+          </div>
+        </div>
 
         <button
           onClick={handleAddExpense}
@@ -321,12 +399,77 @@ export default function Expenses() {
           />
         </div>
 
-        <button className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition">
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition"
+        >
           <FiFilter />
           Filter
         </button>
       </div>
 
+      {showFilters && (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6">
+          <div className="grid md:grid-cols-4 gap-4">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="bg-slate-800 p-3 rounded-xl"
+            >
+              <option value="">All Categories</option>
+
+              {budgetCategories.map((category) => (
+                <option key={category.name} value={category.name}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-slate-800 p-3 rounded-xl"
+            />
+
+            <input
+              type="number"
+              placeholder="Min Amount"
+              value={minAmount}
+              onChange={(e) => setMinAmount(e.target.value)}
+              className="bg-slate-800 p-3 rounded-xl"
+            />
+
+            <input
+              type="number"
+              placeholder="Max Amount"
+              value={maxAmount}
+              onChange={(e) => setMaxAmount(e.target.value)}
+              className="bg-slate-800 p-3 rounded-xl"
+            />
+          </div>
+
+          <button
+            onClick={() => {
+              setSelectedCategory("");
+              setSelectedMonth("");
+              setMinAmount("");
+              setMaxAmount("");
+            }}
+            className="mt-4 px-4 py-2 rounded-xl bg-red-600"
+          >
+            Clear Filters
+          </button>
+        </div>
+      )}
+
+      <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 mb-4">
+        <h3 className="font-semibold">Filter Results</h3>
+
+        <p>{filteredExpenses.length} expenses found</p>
+
+        <p>Total Amount: ₹{filteredTotal.toLocaleString()}</p>
+      </div>
       {/* Expense Table */}
 
       <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
@@ -359,7 +502,7 @@ export default function Expenses() {
                   >
                     <td className="p-5">
                       {expense.expenseDate
-                        ? new Date(expense.expenseDate).toLocaleDateString()
+                        ? new Date(expense.expenseDate).toLocaleString()
                         : "N/A"}
                     </td>
 
