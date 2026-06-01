@@ -33,6 +33,9 @@ export default function Analytics() {
     const [loading, setLoading] =
         useState(true);
 
+    const [currentDate, setCurrentDate] =
+        useState(new Date());
+
     const loadData = async () => {
         try {
             const userId =
@@ -164,20 +167,23 @@ export default function Analytics() {
             expense.amount;
     });
 
-    const today = new Date();
-
     const year =
-        today.getFullYear();
+        currentDate.getFullYear();
 
     const month =
-        today.getMonth();
+        currentDate.getMonth();
 
-    const daysInMonth =
-        new Date(
-            year,
-            month + 1,
-            0
-        ).getDate();
+    const handlePrevMonth = () => {
+        setCurrentDate(
+            new Date(year, month - 1, 1)
+        );
+    };
+
+    const handleNextMonth = () => {
+        setCurrentDate(
+            new Date(year, month + 1, 1)
+        );
+    };
 
     const sortedDays =
         Object.entries(expensesByDate)
@@ -191,30 +197,33 @@ export default function Analytics() {
             ? [...sortedDays].sort((a, b) => a[1] - b[1])[0]
             : [null, 0];
 
-    const calendarDays =
-        Array.from(
-            {
-                length:
-                    daysInMonth,
-            },
-            (_, index) =>
-                index + 1
-        );
+    const firstDay =
+        new Date(
+            year,
+            month,
+            1
+        ).getDay();
 
-    const getCellColor = (
-        amount
-    ) => {
-        if (!amount)
-            return "bg-slate-800";
+    const daysInMonth =
+        new Date(
+            year,
+            month + 1,
+            0
+        ).getDate();
 
-        if (amount < 500)
-            return "bg-green-500/20";
-
-        if (amount < 1500)
-            return "bg-yellow-500/20";
-
-        return "bg-red-500/20";
-    };
+    const calendarCells =
+        [
+            ...Array(firstDay).fill(
+                null
+            ),
+            ...Array.from(
+                {
+                    length:
+                        daysInMonth,
+                },
+                (_, i) => i + 1
+            ),
+        ];
 
     const selectedExpenses = expenses.filter(
         (expense) =>
@@ -240,226 +249,156 @@ export default function Analytics() {
         totalBudget - totalSpent
     );
 
+    const monthlyExpenses =
+        expenses.filter(
+            (expense) => {
+                const date =
+                    new Date(
+                        expense.expenseDate
+                    );
+
+                return (
+                    date.getMonth() ===
+                    month &&
+                    date.getFullYear() ===
+                    year
+                );
+            }
+        );
+
+    const getAmountForDay =
+        (day) => {
+            const dateKey =
+                `${year}-${String(
+                    month + 1
+                ).padStart(
+                    2,
+                    "0"
+                )}-${String(day).padStart(
+                    2,
+                    "0"
+                )}`;
+
+            return (
+                expensesByDate[
+                dateKey
+                ] || 0
+            );
+        };
+
+    const getCellColor =
+        (amount) => {
+            if (amount === 0)
+                return "bg-slate-800";
+
+            if (amount < 500)
+                return "bg-green-500/20";
+
+            if (amount < 1000)
+                return "bg-yellow-500/20";
+
+            if (amount < 3000)
+                return "bg-orange-500/20";
+
+            return "bg-red-500/20";
+        };
+
     return (
         <DashboardLayout>
-            <div className="grid md:grid-cols-3 gap-5 mb-6">
-
-                <div className="bg-white/5 rounded-2xl p-5">
-                    <p>Total Budget</p>
-                    <h2>
-                        ₹{totalBudget.toLocaleString()}
-                    </h2>
-                </div>
-
-                <div className="bg-white/5 rounded-2xl p-5">
-                    <p>Total Spent</p>
-                    <h2>
-                        ₹{totalSpent.toLocaleString()}
-                    </h2>
-                </div>
-
-                <div className="bg-white/5 rounded-2xl p-5">
-                    <p>Remaining</p>
-                    <h2>
-                        ₹{remaining.toLocaleString()}
-                    </h2>
-                </div>
-
-            </div>
-
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                <h3 className="text-xl font-semibold mb-4">
-                    Category Breakdown
-                </h3>
-
-                {Object.entries(categorySummary)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([category, amount]) => {
-                        const percentage =
-                            totalSpent > 0
-                                ? Math.round(
-                                    (amount /
-                                        totalSpent) *
-                                    100
-                                )
-                                : 0;
-
-                        return (
-                            <div
-                                key={category}
-                                className="mb-4"
-                            >
-                                <div className="flex justify-between">
-                                    <span>
-                                        {category}
-                                    </span>
-
-                                    <span>
-                                        ₹{amount}
-                                    </span>
-                                </div>
-
-                                <div className="w-full bg-slate-700 h-2 rounded-full mt-2">
-                                    <div
-                                        className="bg-indigo-500 h-2 rounded-full"
-                                        style={{
-                                            width: `${percentage}%`,
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                        );
-                    })}
-            </div>
-
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                <h3 className="text-xl font-semibold mb-6">
-                    Budget Utilization
-                </h3>
-
-                <div className="space-y-5">
-                    {categoryUtilization.map(
-                        (item) => (
-                            <div
-                                key={item.name}
-                            >
-                                <div className="flex justify-between mb-2">
-                                    <span>
-                                        {item.name}
-                                    </span>
-
-                                    <span>
-                                        ₹
-                                        {item.spent}
-                                        /
-                                        ₹
-                                        {item.limit}
-                                    </span>
-                                </div>
-
-                                <div className="w-full bg-slate-700 rounded-full h-3">
-                                    <div
-                                        className={`h-3 rounded-full ${item.isOverBudget
-                                            ? "bg-red-500"
-                                            : "bg-green-500"
-                                            }`}
-                                        style={{
-                                            width: `${Math.min(
-                                                item.percentage,
-                                                100
-                                            )}%`,
-                                        }}
-                                    />
-                                </div>
-
-                                <div className="flex justify-between mt-2 text-sm">
-                                    <span>
-                                        {
-                                            item
-                                                .percentage
-                                        }
-                                        %
-                                    </span>
-
-                                    <span
-                                        className={
-                                            item.isOverBudget
-                                                ? "text-red-400"
-                                                : "text-green-400"
-                                        }
-                                    >
-                                        {item.isOverBudget
-                                            ? `Over by ₹${(
-                                                item.spent -
-                                                item.limit
-                                            ).toLocaleString()}`
-                                            : `₹${item.remaining.toLocaleString()} left`}
-                                    </span>
-                                </div>
-                            </div>
-                        )
-                    )}
-                </div>
-            </div>
 
             <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mt-6">
+                <div className="flex items-center justify-between mb-6">
+                    <button
+                        onClick={handlePrevMonth}
+                        className="px-4 py-2 bg-slate-800 rounded-xl"
+                    >
+                        ←
+                    </button>
+
+                    <h2 className="text-2xl font-bold">
+                        {currentDate.toLocaleString(
+                            "default",
+                            {
+                                month: "long",
+                                year: "numeric",
+                            }
+                        )}
+                    </h2>
+
+                    <button
+                        onClick={handleNextMonth}
+                        className="px-4 py-2 bg-slate-800 rounded-xl"
+                    >
+                        →
+                    </button>
+                </div>
                 <h3 className="text-xl font-semibold mb-5">
                     Spending Calendar
                 </h3>
 
-                <div className="grid grid-cols-7 gap-3">
-                    {calendarDays.map(
-                        (day) => {
-                            const dateKey =
-                                `${year}-${String(
-                                    month + 1
-                                ).padStart(
-                                    2,
-                                    "0"
-                                )}-${String(
-                                    day
-                                ).padStart(
-                                    2,
-                                    "0"
-                                )}`;
-
-                            const amount =
-                                expensesByDate[
-                                dateKey
-                                ] || 0;
-
-                            return (
-                                <div
-                                    key={day}
-                                    className={`p-3 rounded-xl border border-white/10 ${getCellColor(
-                                        amount
-                                    )}`} onClick={() =>
-                                        setSelectedDate(
-                                            dateKey
-                                        )
-                                    }
-                                >
-                                    <div className="font-semibold" >
-                                        {day}
-                                    </div>
-
-                                    <div className="text-xs mt-2">
-                                        ₹
-                                        {amount.toLocaleString()}
-                                    </div>
-                                </div>
-                            );
+                <h2 className="text-2xl font-bold">
+                    {currentDate.toLocaleString(
+                        "default",
+                        {
+                            month: "long",
+                            year: "numeric",
                         }
                     )}
+                </h2>
+
+                <div className="grid grid-cols-7 gap-2">
+                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                        (day) => (
+                            <div
+                                key={day}
+                                className="text-center font-semibold text-slate-400"
+                            >
+                                {day}
+                            </div>
+                        )
+                    )}
+
+                    {calendarCells.map((day, index) => {
+                        if (!day) {
+                            return (
+                                <div
+                                    key={index}
+                                    className="h-20"
+                                />
+                            );
+                        }
+
+                        const amount =
+                            getAmountForDay(day);
+
+                        const dateKey =
+                            `${year}-${String(
+                                month + 1
+                            ).padStart(2, "0")}-${String(
+                                day
+                            ).padStart(2, "0")}`;
+
+                        return (
+                            <div
+                                key={day}
+                                onClick={() =>
+                                    setSelectedDate(dateKey)
+                                }
+                                className={`h-20 rounded-xl cursor-pointer p-2 border border-white/10 ${getCellColor(
+                                    amount
+                                )}`}
+                            >
+                                <div className="font-semibold">
+                                    {day}
+                                </div>
+
+                                <div className="text-xs mt-2">
+                                    ₹{amount}
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-4 mb-6">
-
-                <div className="bg-white/5 rounded-xl p-4">
-                    <p className="text-slate-400">
-                        Highest Spending Day
-                    </p>
-
-                    <h3 className="text-red-400 text-xl font-bold">
-                        ₹
-                        {highestDay?.[1] ||
-                            0}
-                    </h3>
-                </div>
-
-                <div className="bg-white/5 rounded-xl p-4">
-                    <p className="text-slate-400">
-                        Lowest Spending Day
-                    </p>
-
-                    <h3 className="text-green-400 text-xl font-bold">
-                        ₹
-                        {lowestDay?.[1] ||
-                            0}
-                    </h3>
-                </div>
-
             </div>
 
             {
