@@ -46,20 +46,6 @@ export default function Income() {
 
   const handleAddIncome = async () => {
     try {
-      const incomeDate = new Date(`${formData.date}T${formData.time}`);
-
-      await createIncome({
-        userId: getUserId(),
-
-        source: formData.source,
-
-        amount: Number(formData.amount),
-
-        note: formData.note,
-
-        incomeDate,
-      });
-
       if (!formData.amount || Number(formData.amount) <= 0) {
         alert("Please enter a valid amount");
         return;
@@ -70,6 +56,18 @@ export default function Income() {
         return;
       }
 
+      const incomeDate = new Date(`${formData.date}T${formData.time}`);
+
+      await createIncome({
+        userId: getUserId(),
+        source: formData.source,
+        amount: Number(formData.amount),
+        note: formData.note,
+        incomeDate,
+      });
+
+      await loadIncome();
+
       setShowModal(false);
 
       setFormData({
@@ -77,13 +75,12 @@ export default function Income() {
         amount: "",
         note: "",
         date: new Date().toISOString().split("T")[0],
-
         time: new Date().toTimeString().slice(0, 5),
       });
-
-      loadIncome();
     } catch (error) {
-      console.error(error);
+      console.error("Income Save Error:", error);
+
+      alert(error?.response?.data?.message || "Failed to save income");
     }
   };
 
@@ -199,6 +196,7 @@ export default function Income() {
           onChange={(e) => setSelectedSource(e.target.value)}
           className="bg-slate-800 p-2 rounded-xl"
         >
+          <option value="all">All Sources</option>
           {incomeSources.map((source) => (
             <option key={source} value={source}>
               {source}

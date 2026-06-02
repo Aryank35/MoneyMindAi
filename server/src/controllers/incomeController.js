@@ -21,7 +21,7 @@ export const createIncome = async (req, res) => {
       data: income,
     });
   } catch (error) {
-    console.error("Expense Error:", error);
+    console.error("Income Error:", error);
     res.status(500).json({
       success: false,
       message: error.message,
