@@ -9,6 +9,7 @@ import Wishlist from "../pages/Wishlist";
 import Investments from "../pages/Investments";
 import ProtectedRoute from "./ProtectedRoute";
 import Analytics from "../pages/Analytics";
+import Income from "../pages/Income";
 
 export default function AppRoutes() {
   return (

@@ -6,6 +6,7 @@ import authRoutes from "./routes/authRoutes.js";
 import expenseRoutes from "./routes/expenseRoutes.js";
 import budgetRoutes from "./routes/budgetRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
+import incomeRoutes from "./routes/incomeRoutes.js";
 
 const app = express();
 
@@ -32,6 +33,11 @@ app.use(
 app.use(
   "/api/wishlist",
   wishlistRoutes
+);
+
+app.use(
+  "/api/income",
+  incomeRoutes,
 );
 
 app.get("/", (req, res) => {
