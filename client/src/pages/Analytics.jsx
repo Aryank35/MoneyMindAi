@@ -238,7 +238,7 @@ export default function Analytics() {
               ))}
             </Pie>
             <Tooltip
-              formatter={(value) => [`₹${value.toLocaleString()}`, spent]}
+              formatter={(value, name) => [`₹${value.toLocaleString()}`, name]}
             />
             <Legend />
           </PieChart>
@@ -322,13 +322,6 @@ export default function Analytics() {
           </button>
         </div>
         <h3 className="text-xl font-semibold mb-5">Spending Calendar</h3>
-
-        <h2 className="text-2xl font-bold">
-          {currentDate.toLocaleString("default", {
-            month: "long",
-            year: "numeric",
-          })}
-        </h2>
 
         <div className="grid grid-cols-7 gap-2">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
