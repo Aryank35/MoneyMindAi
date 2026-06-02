@@ -20,10 +20,18 @@ export const getDashboardData = async (userId) => {
 
   const remainingBudget = totalBudget - totalExpenses;
 
+  const totalIncome = incomes.reduce(
+    (sum, income) =>
+      sum + income.amount,
+    0
+  );
+
   return {
     totalBudget,
 
     totalExpenses,
+
+    totalIncome,
 
     remainingBudget,
 

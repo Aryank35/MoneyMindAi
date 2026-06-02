@@ -27,6 +27,10 @@ export default function AppRoutes() {
           }
         />
 
+        <Route
+          path="/income"
+          element={<Income />}
+        />
         <Route path="/expenses" element={<Expenses />} />
 
         <Route path="/budget" element={<Budget />} />

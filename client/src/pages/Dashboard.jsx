@@ -3,8 +3,11 @@ import { useEffect, useState } from "react";
 
 import { getDashboardData } from "../services/dashboardService";
 import { getUserId } from "../utils/auth";
+import { useNavigate } from "react-router-dom";
+
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [dashboardData, setDashboardData] = useState(null);
 
   const [loading, setLoading] = useState(true);
@@ -64,6 +67,33 @@ export default function Dashboard() {
         Math.max(0, Math.round((remainingBudget / totalBudget) * 100)),
       )
       : 0;
+  const goal =
+    dashboardData?.goal || {
+      savedAmount: 85000,
+      targetAmount: 180000,
+    };
+
+  const goalPercentage =
+    Math.round(
+      (goal.savedAmount /
+        goal.targetAmount) *
+      100
+    );
+
+  const totalIncome =
+    dashboardData?.totalIncome || 0;
+
+  const totalInvestments =
+    dashboardData?.totalInvestments || 0;
+
+  const totalSavings =
+    dashboardData?.totalSavings || 0;
+
+  const netWorth =
+    totalIncome +
+    totalInvestments +
+    totalSavings -
+    totalExpenses;
 
   const budgetUsed =
     totalBudget > 0 ? Math.round((totalExpenses / totalBudget) * 100) : 0;
@@ -207,19 +237,25 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <button className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition">
+          <button onClick={() => navigate("/expenses")} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition">
             + Expense
           </button>
 
-          <button className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 transition">
+          <button onClick={() =>
+            navigate("/income")
+          } className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 transition">
             + Income
           </button>
 
-          <button className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 transition">
+          <button onClick={() =>
+            navigate("/goals")
+          } className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 transition">
             + Goal
           </button>
 
-          <button className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 transition">
+          <button onClick={() =>
+            navigate("/investments")
+          } className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 transition">
             + Investment
           </button>
         </div>
@@ -379,10 +415,12 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-          <p className="text-slate-400 text-sm">Net Worth</p>
+          <p className="text-slate-400 text-sm">
+            Net Worth
+          </p>
 
           <h3 className="text-3xl font-bold mt-2 text-emerald-400">
-            ₹{remainingBudget.toLocaleString()}
+            ₹{netWorth.toLocaleString()}
           </h3>
         </div>
       </div>
@@ -437,7 +475,12 @@ export default function Dashboard() {
             <p className="text-slate-400">Royal Enfield Hunter 350</p>
 
             <div className="w-full h-3 bg-slate-700 rounded-full mt-3">
-              <div className="w-[47%] h-3 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500" />
+              <div
+                className="h-3 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500"
+                style={{
+                  width: `${goalPercentage}%`,
+                }}
+              />
             </div>
 
             <div className="flex justify-between mt-3 text-sm">

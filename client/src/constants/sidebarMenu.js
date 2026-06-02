@@ -24,6 +24,16 @@ export const SIDEBAR_MENU = [
     icon: FiTarget,
   },
   {
+    label: "Income",
+    path: "/income",
+    icon: FiDollarSign,
+  },
+  {
+    label: "Goals",
+    path: "/goals",
+    icon: FiTarget,
+  },
+  {
     label: "Wishlist",
     path: "/wishlist",
     icon: FiHeart,
