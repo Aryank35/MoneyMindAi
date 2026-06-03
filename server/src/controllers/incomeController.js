@@ -22,6 +22,7 @@ export const createIncome = async (req, res) => {
     });
   } catch (error) {
     console.error("Income Error:", error);
+
     res.status(500).json({
       success: false,
       message: error.message,
@@ -54,7 +55,7 @@ export const updateIncome = async (req, res) => {
     const { source, amount } = req.body;
 
     const validationError = validateIncome({
-      category,
+      source,
       amount,
     });
 
@@ -65,46 +66,18 @@ export const updateIncome = async (req, res) => {
       });
     }
 
-    export const updateIncome = async (req, res) => {
-      try {
-        const { source, amount } = req.body;
-
-        const validationError = validateIncome({
-          source,
-          amount,
-        });
-
-        if (validationError) {
-          return res.status(400).json({
-            success: false,
-            message: validationError,
-          });
-        }
-
-        const updatedIncome = await Income.findByIdAndUpdate(
-          req.params.id,
-          {
-            ...req.body,
-            source: source.trim(),
-            amount: Number(amount),
-            note: req.body.note?.trim() || "",
-          },
-          {
-            new: true,
-          },
-        );
-
-        res.json({
-          success: true,
-          data: updatedIncome,
-        });
-      } catch (error) {
-        res.status(500).json({
-          success: false,
-          message: error.message,
-        });
+    const updatedIncome = await Income.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...req.body,
+        source: source.trim(),
+        amount: Number(amount),
+        note: req.body.note?.trim() || "",
+      },
+      {
+        new: true,
       }
-    };
+    );
 
     res.json({
       success: true,

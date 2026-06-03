@@ -5,13 +5,12 @@ import { getDashboardData } from "../services/dashboardService";
 import { getUserId } from "../utils/auth";
 import { useNavigate } from "react-router-dom";
 
-
 export default function Dashboard() {
   const navigate = useNavigate();
   const [dashboardData, setDashboardData] = useState(null);
 
   const [loading, setLoading] = useState(true);
-  const currentUser = JSON.parse(localStorage.getItem("user"));
+  const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
 
   useEffect(() => {
     loadDashboard();
@@ -54,46 +53,32 @@ export default function Dashboard() {
 
   const remainingBudget = dashboardData?.remainingBudget || 0;
 
-  const dailyLimit =
-    dashboardData?.dailyLimit || 0;
+  const dailyLimit = dashboardData?.dailyLimit || 0;
 
-  const weeklyLimit =
-    dashboardData?.weeklyLimit || 0;
+  const weeklyLimit = dashboardData?.weeklyLimit || 0;
+
+  const goal = dashboardData?.goal || {
+    savedAmount: 85000,
+    targetAmount: 180000,
+  };
+
+  const goalProgress = (goal.savedAmount / goal.targetAmount) * 100;
+  const goalPercentage = Math.round(
+    (goal.savedAmount / goal.targetAmount) * 100,
+  );
+
+  const totalIncome = dashboardData?.totalIncome || 0;
+
+  const totalInvestments = dashboardData?.totalInvestments || 0;
+
+  const totalSavings = dashboardData?.totalSavings || 0;
+
+  const netWorth = totalIncome - totalExpenses;
 
   const savingsRate =
-    totalBudget > 0
-      ? Math.min(
-        100,
-        Math.max(0, Math.round((remainingBudget / totalBudget) * 100)),
-      )
+    totalIncome > 0
+      ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100)
       : 0;
-  const goal =
-    dashboardData?.goal || {
-      savedAmount: 85000,
-      targetAmount: 180000,
-    };
-
-  const goalPercentage =
-    Math.round(
-      (goal.savedAmount /
-        goal.targetAmount) *
-      100
-    );
-
-  const totalIncome =
-    dashboardData?.totalIncome || 0;
-
-  const totalInvestments =
-    dashboardData?.totalInvestments || 0;
-
-  const totalSavings =
-    dashboardData?.totalSavings || 0;
-
-  const netWorth =
-    totalIncome +
-    totalInvestments +
-    totalSavings -
-    totalExpenses;
 
   const budgetUsed =
     totalBudget > 0 ? Math.round((totalExpenses / totalBudget) * 100) : 0;
@@ -116,82 +101,33 @@ export default function Dashboard() {
     return "Good Night 🌙";
   };
 
-  const today =
-    new Date()
-      .toISOString()
-      .split("T")[0];
+  const today = new Date().toISOString().split("T")[0];
 
-  const todaySpent =
-    (
-      dashboardData?.expenses || []
-    )
-      .filter(
-        (expense) =>
-          expense.expenseDate
-            ?.split("T")[0] ===
-          today
-      )
-      .reduce(
-        (
-          sum,
-          expense
-        ) =>
-          sum +
-          expense.amount,
-        0
-      );
+  const todaySpent = (dashboardData?.expenses || [])
+    .filter((expense) => expense.expenseDate?.split("T")[0] === today)
+    .reduce((sum, expense) => sum + expense.amount, 0);
 
   const dailyUsage =
-    dailyLimit > 0
-      ? Math.round(
-        (todaySpent /
-          dailyLimit) *
-        100
-      )
-      : 0;
+    dailyLimit > 0 ? Math.round((todaySpent / dailyLimit) * 100) : 0;
 
-  const currentDate =
-    new Date();
+  const currentDate = new Date();
 
-  const firstDayOfWeek =
-    new Date(
-      currentDate
-    );
+  const firstDayOfWeek = new Date(currentDate);
 
-  firstDayOfWeek.setDate(
-    currentDate.getDate() -
-    currentDate.getDay()
-  );
+  firstDayOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
 
-  const weekSpent =
-    (
-      dashboardData?.expenses || []
-    )
-      .filter(
-        (expense) =>
-          new Date(
-            expense.expenseDate
-          ) >=
-          firstDayOfWeek
-      )
-      .reduce(
-        (
-          sum,
-          expense
-        ) =>
-          sum +
-          expense.amount,
-        0
-      );
+  const weekSpent = (dashboardData?.expenses || [])
+    .filter((expense) => new Date(expense.expenseDate) >= firstDayOfWeek)
+    .reduce((sum, expense) => sum + expense.amount, 0);
 
   const weeklyUsage =
-    weeklyLimit > 0
-      ? Math.round(
-        (weekSpent / weeklyLimit) * 100
-      )
-      : 0;
+    weeklyLimit > 0 ? Math.round((weekSpent / weeklyLimit) * 100) : 0;
 
   let financialScore = 100;
+
+  if (totalIncome === 0 && totalExpenses === 0) {
+    financialScore = 0;
+  }
 
   if (budgetUsed > 100) {
     financialScore -= 40;
@@ -205,19 +141,18 @@ export default function Dashboard() {
     financialScore -= 15;
   }
 
-  financialScore = Math.max(
-    0,
-    financialScore
-  );
+  financialScore = Math.max(0, financialScore);
 
   const healthMessage =
-    financialScore >= 80
-      ? "Excellent financial discipline"
-      : financialScore >= 60
-        ? "Good financial habits"
-        : financialScore >= 40
-          ? "Average financial health"
-          : "Needs budget improvement";
+    totalIncome === 0 && totalExpenses === 0
+      ? "Start tracking your finances"
+      : financialScore >= 80
+        ? "Excellent financial discipline"
+        : financialScore >= 60
+          ? "Good financial habits"
+          : financialScore >= 40
+            ? "Average financial health"
+            : "Needs budget improvement";
 
   return (
     <DashboardLayout>
@@ -228,7 +163,7 @@ export default function Dashboard() {
           <p className="text-slate-400">{getGreeting()}</p>
 
           <h2 className="text-4xl font-bold">
-            Welcome Back, {currentUser?.name.split(" ")[0] || "User"}
+            Welcome Back, {currentUser?.name?.split(" ")[0] || "User"}
           </h2>
 
           <p className="text-slate-500 mt-2">
@@ -237,25 +172,31 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <button onClick={() => navigate("/expenses")} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition">
+          <button
+            onClick={() => navigate("/expenses")}
+            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition"
+          >
             + Expense
           </button>
 
-          <button onClick={() =>
-            navigate("/income")
-          } className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 transition">
+          <button
+            onClick={() => navigate("/income")}
+            className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 transition"
+          >
             + Income
           </button>
 
-          <button onClick={() =>
-            navigate("/goals")
-          } className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 transition">
+          <button
+            onClick={() => navigate("/goals")}
+            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 transition"
+          >
             + Goal
           </button>
 
-          <button onClick={() =>
-            navigate("/investments")
-          } className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 transition">
+          <button
+            onClick={() => navigate("/investments")}
+            className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 transition"
+          >
             + Investment
           </button>
         </div>
@@ -281,22 +222,18 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {
-        dailyUsage > 100 && (
-          <div className="mt-6 bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
-            <h3 className="text-red-400 font-semibold">
-              ⚠ Daily Budget Exceeded
-            </h3>
+      {dailyUsage > 100 && (
+        <div className="mt-6 bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
+          <h3 className="text-red-400 font-semibold">
+            ⚠ Daily Budget Exceeded
+          </h3>
 
-            <p className="text-slate-300 mt-2">
-              You have spent ₹
-              {todaySpent.toLocaleString()}
-              today against your limit of ₹
-              {dailyLimit.toLocaleString()}.
-            </p>
-          </div>
-        )
-      }
+          <p className="text-slate-300 mt-2">
+            You have spent ₹{todaySpent.toLocaleString()}
+            today against your limit of ₹{dailyLimit.toLocaleString()}.
+          </p>
+        </div>
+      )}
 
       {weeklyUsage > 100 && (
         <div className="mt-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl p-5">
@@ -305,10 +242,8 @@ export default function Dashboard() {
           </h3>
 
           <p className="text-slate-300 mt-2">
-            You have spent ₹
-            {weekSpent.toLocaleString()}
-            this week against your limit of ₹
-            {weeklyLimit.toLocaleString()}.
+            You have spent ₹{weekSpent.toLocaleString()}
+            this week against your limit of ₹{weeklyLimit.toLocaleString()}.
           </p>
         </div>
       )}
@@ -325,60 +260,46 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-          <p className="text-slate-400 text-sm">
-            Today's Spending
-          </p>
+          <p className="text-slate-400 text-sm">Today's Spending</p>
 
           <h3 className="text-3xl font-bold mt-2 text-orange-400">
             ₹{todaySpent.toLocaleString()}
           </h3>
 
           <p className="text-xs text-slate-400 mt-2">
-            Limit ₹
-            {dailyLimit.toLocaleString()}
+            Limit ₹{dailyLimit.toLocaleString()}
           </p>
 
           <div className="w-full bg-slate-700 rounded-full h-2 mt-3">
             <div
-              className={`h-2 rounded-full ${dailyUsage > 100
-                ? "bg-red-500"
-                : "bg-orange-500"
-                }`}
+              className={`h-2 rounded-full ${
+                dailyUsage > 100 ? "bg-red-500" : "bg-orange-500"
+              }`}
               style={{
-                width: `${Math.min(
-                  dailyUsage,
-                  100
-                )}%`,
+                width: `${Math.min(dailyUsage, 100)}%`,
               }}
             />
           </div>
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-          <p className="text-slate-400 text-sm">
-            Weekly Spending
-          </p>
+          <p className="text-slate-400 text-sm">Weekly Spending</p>
 
           <h3 className="text-3xl font-bold mt-2 text-cyan-400">
             ₹{weekSpent.toLocaleString()}
           </h3>
 
           <p className="text-xs text-slate-400 mt-2">
-            Limit ₹
-            {weeklyLimit.toLocaleString()}
+            Limit ₹{weeklyLimit.toLocaleString()}
           </p>
 
           <div className="w-full bg-slate-700 rounded-full h-2 mt-3">
             <div
-              className={`h-2 rounded-full ${weeklyUsage > 100
-                ? "bg-red-500"
-                : "bg-cyan-500"
-                }`}
+              className={`h-2 rounded-full ${
+                weeklyUsage > 100 ? "bg-red-500" : "bg-cyan-500"
+              }`}
               style={{
-                width: `${Math.min(
-                  weeklyUsage,
-                  100
-                )}%`,
+                width: `${Math.min(weeklyUsage, 100)}%`,
               }}
             />
           </div>
@@ -387,7 +308,9 @@ export default function Dashboard() {
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
           <p className="text-slate-400 text-sm">Monthly Income</p>
 
-          <h3 className="text-3xl font-bold mt-2 text-cyan-400">₹{dashboardData?.totalIncome?.toLocaleString() || 0}</h3>
+          <h3 className="text-3xl font-bold mt-2 text-cyan-400">
+            ₹{totalIncome.toLocaleString()}
+          </h3>
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
@@ -415,9 +338,7 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-          <p className="text-slate-400 text-sm">
-            Net Worth
-          </p>
+          <p className="text-slate-400 text-sm">Net Worth</p>
 
           <h3 className="text-3xl font-bold mt-2 text-emerald-400">
             ₹{netWorth.toLocaleString()}
@@ -458,7 +379,7 @@ export default function Dashboard() {
               <div
                 className="h-3 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500"
                 style={{
-                  width: `${budgetUsed}%`,
+                  width: `${Math.min(budgetUsed, 100)}%`,
                 }}
               />
             </div>
@@ -502,7 +423,12 @@ export default function Dashboard() {
             {dashboardData?.expenses?.length ? (
               dashboardData.expenses.slice(0, 5).map((expense) => (
                 <div key={expense._id} className="flex justify-between">
-                  <span>{expense.note || expense.category}</span>
+                  <div>
+                    <p>{expense.category}</p>
+                    <p className="text-xs text-slate-500">
+                      {new Date(expense.expenseDate).toLocaleDateString()}
+                    </p>
+                  </div>
 
                   <span className="text-red-400">-₹{expense.amount}</span>
                 </div>
@@ -543,20 +469,11 @@ export default function Dashboard() {
           </p>
 
           <div className="mt-4 text-sm space-y-2">
-            <p>
-              📅 Today Spent:
-              ₹{todaySpent.toLocaleString()}
-            </p>
+            <p>📅 Today Spent: ₹{todaySpent.toLocaleString()}</p>
 
-            <p>
-              📊 This Week:
-              ₹{weekSpent.toLocaleString()}
-            </p>
+            <p>📊 This Week: ₹{weekSpent.toLocaleString()}</p>
 
-            <p>
-              💰 Remaining:
-              ₹{remainingBudget.toLocaleString()}
-            </p>
+            <p>💰 Remaining: ₹{remainingBudget.toLocaleString()}</p>
           </div>
         </div>
       </div>
