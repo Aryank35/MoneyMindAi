@@ -40,18 +40,23 @@ export default function Budget() {
   });
 
   const handleAddCategory = () => {
-    setBudgetForm({
-      ...budgetForm,
-
+    setBudgetForm((prev) => ({
+      ...prev,
       categories: [
-        ...budgetForm.categories,
-
+        ...prev.categories,
         {
           name: "",
           limit: "",
         },
       ],
-    });
+    }));
+  };
+
+  const handleRemoveCategory = (index) => {
+    setBudgetForm((prev) => ({
+      ...prev,
+      categories: prev.categories.filter((_, i) => i !== index),
+    }));
   };
 
   const handleCategoryChange = (index, field, value) => {
@@ -98,11 +103,11 @@ export default function Budget() {
             currentBudget.categories?.length > 0
               ? currentBudget.categories
               : [
-                {
-                  name: "Food",
-                  limit: "",
-                },
-              ],
+                  {
+                    name: "Food",
+                    limit: "",
+                  },
+                ],
         });
       }
     } catch (error) {
@@ -124,41 +129,40 @@ export default function Budget() {
         (item) => item.name.trim() && Number(item.limit) > 0,
       );
 
-      const daysInMonth =
-        new Date(
-          new Date().getFullYear(),
-          new Date().getMonth() + 1,
-          0
-        ).getDate();
+      const daysInMonth = new Date(
+        new Date().getFullYear(),
+        new Date().getMonth() + 1,
+        0,
+      ).getDate();
 
-      const totalBudgetValue =
-        Number(budgetForm.totalBudget);
+      const totalBudgetValue = Number(budgetForm.totalBudget);
 
-      const dailyLimit =
-        Math.round(
-          totalBudgetValue /
-          daysInMonth
-        );
+      const dailyLimit = Math.round(totalBudgetValue / daysInMonth);
 
-      const weeklyLimit =
-        Math.round(
-          totalBudgetValue / 4
-        );
+      const weeklyLimit = Math.round(totalBudgetValue / 4);
+
+      if (!budgetForm.totalBudget) {
+        alert("Please enter total budget");
+        return;
+      }
+
+      if (cleanedCategories.length === 0) {
+        alert("Please add at least one category");
+        return;
+      }
 
       const payload = {
         userId: getUserId(),
 
         month: budgetForm.month,
 
-        totalBudget:
-          totalBudgetValue,
+        totalBudget: totalBudgetValue,
 
         dailyLimit,
 
         weeklyLimit,
 
-        categories:
-          cleanedCategories,
+        categories: cleanedCategories,
       };
 
       if (budget?._id) {
@@ -250,11 +254,11 @@ export default function Budget() {
                   budget.categories?.length > 0
                     ? budget.categories
                     : [
-                      {
-                        name: "Food",
-                        limit: "",
-                      },
-                    ],
+                        {
+                          name: "Food",
+                          limit: "",
+                        },
+                      ],
               });
             }
 
@@ -321,6 +325,18 @@ export default function Budget() {
           </div>
 
           <div className="grid grid-cols-3 gap-4 mt-6">
+            <input
+              type="text"
+              placeholder="Month (Jun 2026)"
+              value={budgetForm.month}
+              onChange={(e) =>
+                setBudgetForm({
+                  ...budgetForm,
+                  month: e.target.value,
+                })
+              }
+              className="w-full bg-slate-800 p-3 rounded-xl"
+            />
             <div className="bg-white/5 rounded-xl p-4">
               <p className="text-slate-400 text-sm">Total Budget</p>
 
@@ -377,10 +393,11 @@ export default function Budget() {
 
                 <div className="w-full bg-slate-700 rounded-full h-3">
                   <div
-                    className={`h-3 rounded-full ${item.isOverBudget
-                      ? "bg-red-500"
-                      : "bg-gradient-to-r from-cyan-500 to-indigo-500"
-                      }`}
+                    className={`h-3 rounded-full ${
+                      item.isOverBudget
+                        ? "bg-red-500"
+                        : "bg-gradient-to-r from-cyan-500 to-indigo-500"
+                    }`}
                     style={{
                       width: `${item.percentage}%`,
                     }}
@@ -434,14 +451,16 @@ export default function Budget() {
                 onChange={(e) =>
                   setBudgetForm({
                     ...budgetForm,
-                    totalBudget:
-                      e.target.value,
+                    totalBudget: e.target.value,
                   })
                 }
                 className="w-full bg-slate-800 p-3 rounded-xl"
               />
               {budgetForm.categories.map((category, index) => (
-                <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-3">
+                <div
+                  key={index}
+                  className="grid grid-cols-[1fr_1fr_auto] gap-3"
+                >
                   <input
                     type="text"
                     placeholder="Category Name"
@@ -464,9 +483,7 @@ export default function Budget() {
 
                   <button
                     type="button"
-                    onClick={() =>
-                      handleRemoveCategory(index)
-                    }
+                    onClick={() => handleRemoveCategory(index)}
                     className="bg-red-500/20 text-red-400 px-3 rounded-xl"
                   >
                     ✕
@@ -480,7 +497,6 @@ export default function Budget() {
               >
                 + Add Category
               </button>
-
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
@@ -492,19 +508,25 @@ export default function Budget() {
               </button>
 
               <button
+                type="button"
                 onClick={handleSaveBudget}
-                className="px-4 py-2 rounded-lg bg-indigo-600"
+                disabled={isBudgetExceeded}
+                className={`px-4 py-2 rounded-lg ${
+                  isBudgetExceeded
+                    ? "bg-slate-600 cursor-not-allowed"
+                    : "bg-indigo-600 hover:bg-indigo-500"
+                }`}
               >
-                Save
+                Save Budget
               </button>
+              {isBudgetExceeded && (
+                <p className="text-red-400 text-sm">
+                  Category limits exceed total monthly budget
+                </p>
+              )}
             </div>
           </div>
         </div>
-      )}
-      {isBudgetExceeded && (
-        <p className="text-red-400 text-sm">
-          Category limits exceed total monthly budget
-        </p>
       )}
     </DashboardLayout>
   );
