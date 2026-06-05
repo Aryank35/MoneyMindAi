@@ -10,6 +10,7 @@ import Investments from "../pages/Investments";
 import ProtectedRoute from "./ProtectedRoute";
 import Analytics from "../pages/Analytics";
 import Income from "../pages/Income";
+import Accounts from "../pages/Accounts";
 
 export default function AppRoutes() {
   return (
@@ -28,10 +29,7 @@ export default function AppRoutes() {
           }
         />
 
-        <Route
-          path="/income"
-          element={<Income />}
-        />
+        <Route path="/income" element={<Income />} />
         <Route path="/expenses" element={<Expenses />} />
 
         <Route path="/budget" element={<Budget />} />
@@ -40,11 +38,9 @@ export default function AppRoutes() {
 
         <Route path="/investments" element={<Investments />} />
 
-        <Route
-          path="/analytics"
-          element={<Analytics />}
-        />
+        <Route path="/analytics" element={<Analytics />} />
 
+        <Route path="/accounts" element={<Accounts />} />
       </Routes>
     </BrowserRouter>
   );

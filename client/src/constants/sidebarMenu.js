@@ -5,6 +5,7 @@ import {
   FiHeart,
   FiTrendingUp,
   FiBarChart2,
+  FiCreditCard,
 } from "react-icons/fi";
 
 export const SIDEBAR_MENU = [
@@ -46,6 +47,11 @@ export const SIDEBAR_MENU = [
   {
     label: "Analytics",
     path: "/analytics",
-    icon: FiBarChart2
-  }
+    icon: FiBarChart2,
+  },
+  {
+    label: "Accounts",
+    path: "/accounts",
+    icon: FiCreditCard,
+  },
 ];

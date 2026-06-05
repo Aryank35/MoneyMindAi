@@ -7,6 +7,10 @@ import { getUserId } from "../utils/auth";
 
 import { useEffect, useState } from "react";
 
+import { getAccountsByUser } from "../services/accountService";
+
+import { getIncomesByUser } from "../services/incomeService";
+
 import {
   PieChart,
   Pie,
@@ -14,6 +18,10 @@ import {
   ResponsiveContainer,
   Cell,
   Legend,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
 } from "recharts";
 
 export default function Analytics() {
@@ -26,6 +34,10 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
 
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  const [accounts, setAccounts] = useState([]);
+
+  const [incomes, setIncomes] = useState([]);
 
   const loadData = async () => {
     try {
@@ -40,9 +52,17 @@ export default function Analytics() {
 
       const budgetRes = await getBudgetByUser(userId);
 
+      const accountRes = await getAccountsByUser(userId);
+
+      const incomeRes = await getIncomesByUser(userId);
+
       setExpenses(expenseRes.data || []);
 
       setBudget(budgetRes.data?.[0] || null);
+
+      setAccounts(accountRes.data || []);
+
+      setIncomes(incomeRes.data || []);
     } catch (error) {
       console.error(error);
     } finally {
@@ -98,6 +118,19 @@ export default function Analytics() {
   });
 
   const expensesByDate = {};
+
+  expenses.forEach((expense) => {
+    const expenseDate = new Date(expense.expenseDate);
+
+    const key =
+      expenseDate.getFullYear() +
+      "-" +
+      String(expenseDate.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(expenseDate.getDate()).padStart(2, "0");
+
+    expensesByDate[key] = (expensesByDate[key] || 0) + expense.amount;
+  });
   expenses.forEach((expense) => {
     const date = new Date(expense.expenseDate).toISOString().split("T")[0];
 
@@ -128,15 +161,15 @@ export default function Analytics() {
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  const calendarCells = [
-    ...Array(firstDay).fill(null),
-    ...Array.from(
-      {
-        length: daysInMonth,
-      },
-      (_, i) => i + 1,
-    ),
-  ];
+  const calendarCells = [];
+
+  for (let i = 0; i < firstDay; i++) {
+    calendarCells.push(null);
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    calendarCells.push(day);
+  }
 
   const COLORS = [
     "#6366F1", // Indigo
@@ -160,6 +193,8 @@ export default function Analytics() {
   const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
 
   const totalBudget = budget?.totalBudget || 0;
+
+  const totalIncome = incomes.reduce((sum, income) => sum + income.amount, 0);
 
   const remaining = Math.max(0, totalBudget - totalSpent);
 
@@ -189,11 +224,44 @@ export default function Analytics() {
     return "bg-red-500/20";
   };
 
-  const totalIncome = 0;
-
   const totalExpense = expenses.reduce(
     (sum, expense) => sum + expense.amount,
     0,
+  );
+
+  const savingsRate =
+    totalIncome > 0
+      ? Math.round(((totalIncome - totalExpense) / totalIncome) * 100)
+      : 0;
+
+  const savingStatus = () => {
+    if (savingsRate > 40) return "Saver";
+
+    if (savingsRate > 20) return "Balanced";
+
+    if (savingsRate > 0) return "Explorer";
+
+    return "Spender";
+  };
+
+  const netWorth = totalIncome - totalExpense;
+
+  const monthlyComparison = [
+    {
+      name: "Income",
+      amount: totalIncome,
+    },
+    {
+      name: "Expense",
+      amount: totalExpense,
+    },
+  ];
+
+  const budgetUsed =
+    totalBudget > 0 ? Math.round((totalExpense / totalBudget) * 100) : 0;
+  const healthScore = Math.max(
+    0,
+    Math.min(100, savingsRate + (100 - budgetUsed)),
   );
 
   const transactionCount = expenses.length;
@@ -203,6 +271,17 @@ export default function Analytics() {
     value,
   }));
 
+  const accountPieData = accounts.map((account) => ({
+    name: account.name,
+    value: account.balance,
+  }));
+
+  const filteredExpenses = expenses.filter((expense) => {
+    const d = new Date(expense.expenseDate);
+
+    return d.getMonth() === month && d.getFullYear() === year;
+  });
+
   const formatDate = (date) =>
     date
       ? new Date(date).toLocaleDateString("en-IN", {
@@ -211,6 +290,26 @@ export default function Analytics() {
           year: "numeric",
         })
       : "-";
+
+  const topCategory = Object.entries(categorySummary).sort(
+    (a, b) => b[1] - a[1],
+  )[0];
+
+  const insights = [
+    topCategory ? `Highest spending category is ${topCategory[0]}` : null,
+
+    totalExpense > (budget?.totalBudget || 0) * 0.8
+      ? "You have used more than 80% of your budget."
+      : "Budget utilization is healthy.",
+
+    highestDay[0]
+      ? `Highest spending day was ${formatDate(highestDay[0])}`
+      : null,
+  ];
+
+  const topCategories = Object.entries(categorySummary)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
 
   return (
     <DashboardLayout>
@@ -247,15 +346,15 @@ export default function Analytics() {
 
       <div className="grid md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white/5 rounded-2xl p-5">
-          <p className="text-slate-400">Budget</p>
+          <p className="text-slate-400">Monthly Income</p>
 
           <h3 className="text-2xl font-bold">
-            ₹{totalBudget.toLocaleString()}
+            ₹{totalIncome.toLocaleString()}
           </h3>
         </div>
 
         <div className="bg-white/5 rounded-2xl p-5">
-          <p className="text-slate-400">Spent</p>
+          <p className="text-slate-400">Monthly Expense</p>
 
           <h3 className="text-2xl font-bold text-red-400">
             ₹{totalSpent.toLocaleString()}
@@ -263,17 +362,17 @@ export default function Analytics() {
         </div>
 
         <div className="bg-white/5 rounded-2xl p-5">
-          <p className="text-slate-400">Remaining</p>
+          <p className="text-slate-400">Net Worth</p>
 
           <h3 className="text-2xl font-bold text-green-400">
-            ₹{remaining.toLocaleString()}
+            ₹{netWorth.toLocaleString()}
           </h3>
         </div>
 
         <div className="bg-white/5 rounded-2xl p-5">
-          <p className="text-slate-400">Transactions</p>
+          <p className="text-slate-400">Savings Rate</p>
 
-          <h3 className="text-2xl font-bold">{transactionCount}</h3>
+          <h3 className="text-2xl font-bold">{savingsRate.toFixed(2)}%</h3>
         </div>
       </div>
 
@@ -283,12 +382,12 @@ export default function Analytics() {
         <div className="grid grid-cols-3 mt-6">
           <div>
             <p>Income</p>
-            <h4>₹{totalIncome}</h4>
+            <h4>₹{totalIncome.toLocaleString()}</h4>
           </div>
 
           <div>
             <p>Expense</p>
-            <h4>₹{totalExpense}</h4>
+            <h4>₹{totalExpense.toLocaleString()}</h4>
           </div>
 
           <div>
@@ -296,6 +395,78 @@ export default function Analytics() {
             <h4>{transactionCount}</h4>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white/5 rounded-2xl p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-4">Accounts Overview</h2>
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={accountPieData}
+              dataKey="value"
+              nameKey="name"
+              outerRadius={100}
+            >
+              {accountPieData.map((_, index) => (
+                <Cell key={index} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="grid md:grid-cols-3 gap-4">
+          {accounts.map((account) => (
+            <div
+              key={account._id}
+              className="
+  relative overflow-hidden
+  bg-gradient-to-br
+  from-indigo-500/20
+  to-purple-500/20
+  backdrop-blur-xl
+  border border-white/10
+  rounded-3xl
+  p-5
+"
+            >
+              <div className="text-3xl mb-3">{account.icon || "💳"}</div>
+
+              <h3 className="font-semibold">{account.name}</h3>
+
+              <p className="text-slate-400 text-sm">{account.type}</p>
+
+              <h2 className="text-3xl font-bold mt-4">
+                ₹{account.balance.toLocaleString()}
+              </h2>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-gradient-to-r from-indigo-500/20 to-purple-500/20 rounded-2xl p-6">
+        <h2 className="text-xl font-bold mb-4">AI Insights</h2>
+
+        {insights.map((insight, index) => (
+          <p key={index} className="mb-2">
+            • {insight}
+          </p>
+        ))}
+      </div>
+
+      <div className="bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 rounded-2xl p-6 mt-6">
+        <h2 className="text-xl font-bold">Spending DNA</h2>
+
+        <h1 className="text-4xl mt-4">
+          {savingStatus() === "Saver" && "🟢 Saver"}
+          {savingStatus() === "Balanced" && "🔵 Balanced"}
+          {savingStatus() === "Explorer" && "🟠 Explorer"}
+          {savingStatus() === "Spender" && "🔴 Spender"}
+        </h1>
+
+        <p className="text-slate-400 mt-3">
+          Based on your savings rate and spending habits.
+        </p>
       </div>
 
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mt-6">
@@ -346,13 +517,38 @@ export default function Analytics() {
               <div
                 key={day}
                 onClick={() => setSelectedDate(dateKey)}
-                className={`h-20 rounded-xl cursor-pointer p-2 border border-white/10 ${getCellColor(
-                  amount,
-                )}`}
+                className={`
+    relative
+    h-24
+    rounded-2xl
+    cursor-pointer
+    p-3
+    border
+    transition-all
+    duration-200
+    hover:scale-105
+    hover:border-indigo-400
+    ${selectedDate === dateKey ? "ring-2 ring-indigo-500" : "border-white/10"}
+    ${getCellColor(amount)}
+  `}
               >
-                <div className="font-semibold">{day}</div>
+                <div className="flex justify-between items-start">
+                  <span className="font-semibold text-sm">{day}</span>
 
-                <div className="text-xs mt-2">₹{amount}</div>
+                  {amount > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-white" />
+                  )}
+                </div>
+
+                <div className="absolute bottom-2 left-3">
+                  {amount > 0 ? (
+                    <p className="text-xs font-medium">
+                      ₹{amount.toLocaleString()}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-500">No Spend</p>
+                  )}
+                </div>
               </div>
             );
           })}

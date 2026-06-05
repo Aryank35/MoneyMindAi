@@ -7,44 +7,27 @@ import expenseRoutes from "./routes/expenseRoutes.js";
 import budgetRoutes from "./routes/budgetRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import incomeRoutes from "./routes/incomeRoutes.js";
+import accountRoutes from "./routes/accountRoutes.js";
 
 const app = express();
-
 
 app.use(cors());
 app.use(express.json());
 
-app.use(
-  "/api/auth",
-  authRoutes
-);
-app.use(
-  "/api/users",
-  userRoutes
-);
-app.use(
-  "/api/expenses",
-  expenseRoutes
-);
-app.use(
-  "/api/budget",
-  budgetRoutes
-);
-app.use(
-  "/api/wishlist",
-  wishlistRoutes
-);
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/expenses", expenseRoutes);
+app.use("/api/budget", budgetRoutes);
+app.use("/api/wishlist", wishlistRoutes);
 
-app.use(
-  "/api/income",
-  incomeRoutes,
-);
+app.use("/api/income", incomeRoutes);
+
+app.use("/api/accounts", accountRoutes);
 
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message:
-      "MoneyMind API Running",
+    message: "MoneyMind API Running",
   });
 });
 

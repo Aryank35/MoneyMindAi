@@ -24,4 +24,11 @@ export const API_ENDPOINTS = {
     UPDATE: "/wishlist",
     DELETE: "/wishlist",
   },
+
+  ACCOUNT: {
+    CREATE: "/accounts",
+    GET_BY_USER: "/accounts/user",
+    UPDATE: "/accounts",
+    DELETE: "/accounts",
+  },
 };
