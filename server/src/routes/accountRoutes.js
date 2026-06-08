@@ -11,19 +11,12 @@ const router = express.Router();
 
 router.post("/", createAccount);
 
-router.get(
-  "/user/:userId",
-  getAccountsByUser
-);
+router.get("/user/:userId", getAccountsByUser);
 
-router.put(
-  "/:id",
-  updateAccount
-);
+app.use("/api/accounts", accountRoutes);
 
-router.delete(
-  "/:id",
-  deleteAccount
-);
+router.put("/:id", updateAccount);
+
+router.delete("/:id", deleteAccount);
 
 export default router;

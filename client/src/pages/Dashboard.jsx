@@ -58,27 +58,121 @@ export default function Dashboard() {
   const weeklyLimit = dashboardData?.weeklyLimit || 0;
 
   const goal = dashboardData?.goal || {
+    name: "Royal Enfield Hunter",
     savedAmount: 85000,
     targetAmount: 180000,
   };
 
-  const goalProgress = (goal.savedAmount / goal.targetAmount) * 100;
   const goalPercentage = Math.round(
     (goal.savedAmount / goal.targetAmount) * 100,
   );
 
-  const totalIncome = dashboardData?.totalIncome || 0;
+  const incomes = dashboardData?.incomes || [];
+
+  const totalIncome = incomes.reduce(
+    (sum, item) => sum + Number(item.amount),
+    0,
+  );
+
+  const expenses = dashboardData?.expenses || [];
+
+  const totalSpent = expenses.reduce(
+    (sum, item) => sum + Number(item.amount),
+    0,
+  );
+
+  const totalSaved = totalIncome - totalSpent;
+
+  const accounts = dashboardData?.accounts || [];
+
+  const totalAssets = dashboardData?.totalAssets || 0;
+
+  const stats = [
+    {
+      title: "Income",
+      value: totalIncome,
+      icon: "💰",
+      color: "text-green-400",
+    },
+    {
+      title: "Expense",
+      value: totalExpenses,
+      icon: "📉",
+      color: "text-red-400",
+    },
+    {
+      title: "Budget",
+      value: totalBudget,
+      icon: "🎯",
+      color: "text-cyan-400",
+    },
+    {
+      title: "Savings",
+      value: totalSaved,
+      icon: "🏦",
+      color: "text-yellow-400",
+    },
+  ];
 
   const totalInvestments = dashboardData?.totalInvestments || 0;
 
   const totalSavings = dashboardData?.totalSavings || 0;
 
-  const netWorth = totalIncome - totalExpenses;
+  // const netWorth = totalAssets;
 
-  const savingsRate =
-    totalIncome > 0
-      ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100)
-      : 0;
+  const netWorth = accounts.reduce(
+    (sum, account) => sum + Number(account.balance || 0),
+    0,
+  );
+
+  const savingsPots = [
+    {
+      name: "Trip Fund",
+      current: 3000,
+      target: 50000,
+      color: "bg-indigo-500",
+      icon: "✈️",
+    },
+    {
+      name: "Events Fund",
+      current: 1800,
+      target: 20000,
+      color: "bg-purple-500",
+      icon: "🎉",
+    },
+    {
+      name: "LIC Fund",
+      current: 1200,
+      target: 6000,
+      color: "bg-emerald-500",
+      icon: "🛡️",
+    },
+  ];
+
+  const allocations = [
+    {
+      name: "Food",
+      amount: 10000,
+    },
+    {
+      name: "Investment",
+      amount: 7000,
+    },
+    {
+      name: "Needs",
+      amount: 7000,
+    },
+    {
+      name: "Travel",
+      amount: 3500,
+    },
+    {
+      name: "Entertainment",
+      amount: 3500,
+    },
+  ];
+
+  const savingsRate = dashboardData?.savingsRate || 0;
 
   const budgetUsed =
     totalBudget > 0 ? Math.round((totalExpenses / totalBudget) * 100) : 0;
@@ -125,23 +219,17 @@ export default function Dashboard() {
 
   let financialScore = 100;
 
-  if (totalIncome === 0 && totalExpenses === 0) {
-    financialScore = 0;
-  }
+  if (budgetUsed > 100) financialScore -= 25;
 
-  if (budgetUsed > 100) {
-    financialScore -= 40;
-  }
+  if (savingsRate < 20) financialScore -= 20;
 
-  if (dailyUsage > 100) {
-    financialScore -= 15;
-  }
+  if (todaySpent > dailyLimit) financialScore -= 10;
 
-  if (weeklyUsage > 100) {
-    financialScore -= 15;
-  }
+  if (weekSpent > weeklyLimit) financialScore -= 10;
 
-  financialScore = Math.max(0, financialScore);
+  if (totalAssets < totalIncome) financialScore -= 15;
+
+  financialScore = Math.max(0, Math.min(100, financialScore));
 
   const healthMessage =
     totalIncome === 0 && totalExpenses === 0
@@ -156,68 +244,30 @@ export default function Dashboard() {
 
   return (
     <DashboardLayout>
-      {/* Welcome Section */}
+      <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-600/30 via-purple-600/20 to-cyan-600/20 p-8 backdrop-blur-xl mb-6">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.3),transparent_40%)]" />
 
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <p className="text-slate-400">{getGreeting()}</p>
-
-          <h2 className="text-4xl font-bold">
-            Welcome Back, {currentUser?.name?.split(" ")[0] || "User"}
-          </h2>
-
-          <p className="text-slate-500 mt-2">
-            Here's your financial summary for this month
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => navigate("/expenses")}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition"
-          >
-            + Expense
-          </button>
-
-          <button
-            onClick={() => navigate("/income")}
-            className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 transition"
-          >
-            + Income
-          </button>
-
-          <button
-            onClick={() => navigate("/goals")}
-            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 transition"
-          >
-            + Goal
-          </button>
-
-          <button
-            onClick={() => navigate("/investments")}
-            className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 transition"
-          >
-            + Investment
-          </button>
-        </div>
-      </div>
-
-      {/* Financial Health */}
-
-      <div className="mt-8 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-2xl p-6">
-        <div className="flex justify-between items-center">
+        <div className="relative z-10 flex flex-col lg:flex-row justify-between gap-6">
           <div>
-            <h3 className="text-xl font-semibold">Financial Health Score</h3>
+            <p className="text-slate-300">{getGreeting()}</p>
 
-            <p className="text-slate-400 mt-2">{healthMessage}</p>
+            <h1 className="text-5xl font-bold mt-2">
+              Hey {currentUser?.name?.split(" ")[0]} 👋
+            </h1>
+
+            <p className="text-slate-400 mt-3">Track. Plan. Grow.</p>
           </div>
 
           <div className="text-right">
-            <h2 className="text-5xl font-bold text-green-400">
-              {financialScore}
+            <p className="text-slate-400">Net Worth</p>
+
+            <h2 className="text-5xl font-bold text-emerald-400">
+              ₹{netWorth.toLocaleString()}
             </h2>
 
-            <p className="text-slate-400">out of 100</p>
+            <p className="text-sm text-slate-400 mt-2">
+              Savings Rate {savingsRate}%
+            </p>
           </div>
         </div>
       </div>
@@ -229,24 +279,32 @@ export default function Dashboard() {
           </h3>
 
           <p className="text-slate-300 mt-2">
-            You have spent ₹{todaySpent.toLocaleString()}
+            You have spent ₹{todaySpent.toLocaleString() + " "}
             today against your limit of ₹{dailyLimit.toLocaleString()}.
           </p>
         </div>
       )}
 
       {weeklyUsage > 100 && (
-        <div className="mt-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl p-5">
+        <div className="mt-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl p-5 mb-6">
           <h3 className="text-orange-400 font-semibold">
             ⚠ Weekly Budget Exceeded
           </h3>
 
           <p className="text-slate-300 mt-2">
-            You have spent ₹{weekSpent.toLocaleString()}
+            You have spent ₹{weekSpent.toLocaleString() + " "}
             this week against your limit of ₹{weeklyLimit.toLocaleString()}.
           </p>
         </div>
       )}
+
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+        <p className="text-slate-400 text-sm">Total Assets</p>
+
+        <h3 className="text-3xl font-bold mt-2 text-emerald-400">
+          ₹{totalAssets.toLocaleString()}
+        </h3>
+      </div>
 
       {/* Summary Cards */}
 
@@ -346,6 +404,130 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div className="mt-8">
+        <h3 className="text-2xl font-semibold mb-5">My Accounts</h3>
+
+        <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-5">
+          {accounts.map((account) => (
+            <div
+              key={account._id}
+              className="
+        relative
+        overflow-hidden
+        rounded-3xl
+        bg-gradient-to-br
+        from-indigo-600
+        to-purple-700
+        p-6
+        shadow-xl
+        hover:scale-105
+        transition-all
+      "
+            >
+              <div className="absolute top-4 right-4 opacity-20 text-6xl">
+                💳
+              </div>
+
+              <div className="text-4xl">{account.icon || "🏦"}</div>
+
+              <h3 className="mt-6 text-xl font-bold">{account.name}</h3>
+
+              <p className="text-indigo-100">{account.type}</p>
+
+              <div className="mt-8">
+                <p className="text-indigo-100 text-sm">Available Balance</p>
+
+                <h2 className="text-3xl font-bold">
+                  ₹{Number(account.balance || 0).toLocaleString()}
+                </h2>
+              </div>
+
+              <p className="mt-6 text-xs opacity-70">**** **** **** 2458</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
+        <h3 className="text-xl font-semibold mb-5">Savings Pots</h3>
+
+        <div className="space-y-4">
+          <div>
+            <div className="flex justify-between">
+              <span>✈ Trip Fund</span>
+              <span>₹3,000 / ₹50,000</span>
+            </div>
+
+            <div className="w-full h-2 bg-slate-700 rounded-full mt-2">
+              <div
+                className="h-2 bg-indigo-500 rounded-full"
+                style={{ width: "6%" }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex justify-between">
+              <span>🎉 Events Fund</span>
+              <span>₹1,800 / ₹20,000</span>
+            </div>
+
+            <div className="w-full h-2 bg-slate-700 rounded-full mt-2">
+              <div
+                className="h-2 bg-purple-500 rounded-full"
+                style={{ width: "9%" }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
+        <h3 className="text-xl font-semibold mb-5">Monthly Allocation</h3>
+
+        <div className="space-y-3">
+          <div className="flex justify-between">
+            <span>Food</span>
+            <span>₹10,000</span>
+          </div>
+
+          <div className="flex justify-between">
+            <span>Investment</span>
+            <span>₹7,000</span>
+          </div>
+
+          <div className="flex justify-between">
+            <span>Needs</span>
+            <span>₹7,000</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-5">
+        {stats.map((card) => (
+          <div
+            key={card.title}
+            className="
+      bg-white/5
+      backdrop-blur-xl
+      border border-white/10
+      rounded-3xl
+      p-6
+      hover:scale-105
+      transition-all
+    "
+          >
+            <div className="text-4xl">{card.icon}</div>
+
+            <p className="mt-4 text-slate-400">{card.title}</p>
+
+            <h3 className={`text-3xl font-bold mt-2 ${card.color}`}>
+              ₹{card.value.toLocaleString()}
+            </h3>
+          </div>
+        ))}
+      </div>
+
       {/* Analytics Section */}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-8">
@@ -393,7 +575,7 @@ export default function Dashboard() {
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
             <h3 className="text-xl font-semibold mb-4">Goal Progress</h3>
 
-            <p className="text-slate-400">Royal Enfield Hunter 350</p>
+            <p className="text-slate-400">{goal.name}</p>
 
             <div className="w-full h-3 bg-slate-700 rounded-full mt-3">
               <div
@@ -463,10 +645,21 @@ export default function Dashboard() {
         <div className="bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-500/20 rounded-2xl p-6">
           <h3 className="text-xl font-semibold">🤖 AI Financial Coach</h3>
 
-          <p className="text-slate-300 mt-4">
-            You have spent ₹{totalExpenses.toLocaleString()} this month. Your
-            remaining budget is ₹{remainingBudget.toLocaleString()}.
-          </p>
+          <div className="space-y-3">
+            <p>
+              💡 You saved ₹{totalSaved.toLocaleString()}
+              this month.
+            </p>
+
+            <p>📊 Your savings rate is {savingsRate}%.</p>
+
+            <p>⚠ Food category accounts for most spending.</p>
+
+            <p>
+              🎯 You're
+              {goalPercentage}% towards your goal.
+            </p>
+          </div>
 
           <div className="mt-4 text-sm space-y-2">
             <p>📅 Today Spent: ₹{todaySpent.toLocaleString()}</p>

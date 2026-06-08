@@ -1,19 +1,24 @@
 import { getBudgetByUser } from "./budgetService";
 import { getExpensesByUser } from "./expenseService";
 import { getIncomesByUser } from "./incomeService";
+import { getAccountsByUser } from "./accountService";
 
 export const getDashboardData = async (userId) => {
-  const [expenseResponse, budgetResponse, incomeResponse] = await Promise.all([
-    getExpensesByUser(userId),
-    getBudgetByUser(userId),
-    getIncomesByUser(userId),
-  ]);
+  const [expenseResponse, budgetResponse, incomeResponse, accountResponse] =
+    await Promise.all([
+      getExpensesByUser(userId),
+      getBudgetByUser(userId),
+      getIncomesByUser(userId),
+      getAccountsByUser(userId),
+    ]);
 
   const expenses = expenseResponse.data || [];
 
   const incomes = incomeResponse.data || [];
 
   const budget = budgetResponse.data?.[0] || null;
+
+  const accounts = accountResponse.data || [];
 
   const totalExpenses = expenses.reduce(
     (sum, expense) => sum + Number(expense.amount),
@@ -34,10 +39,14 @@ export const getDashboardData = async (userId) => {
     totalExpenses,
     totalIncome,
     remainingBudget,
+
     dailyLimit: budget?.dailyLimit || 0,
     weeklyLimit: budget?.weeklyLimit || 0,
+
     expenses,
     incomes,
+    accounts,
+
     budget,
   };
 };

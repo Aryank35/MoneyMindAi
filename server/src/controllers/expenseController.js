@@ -1,4 +1,5 @@
 import Expense from "../models/Expense.js";
+import Account from "../models/Account.js";
 
 const validateExpense = ({ category, amount }) => {
   if (!category?.trim()) {
@@ -14,8 +15,17 @@ const validateExpense = ({ category, amount }) => {
 
 export const createExpense = async (req, res) => {
   try {
-
     const expense = await Expense.create(req.body);
+
+    if (req.body.accountId) {
+      const account = await Account.findById(req.body.accountId);
+
+      if (account) {
+        account.balance -= Number(req.body.amount);
+
+        await account.save();
+      }
+    }
 
     res.status(201).json({
       success: true,

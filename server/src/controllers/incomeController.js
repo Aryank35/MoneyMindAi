@@ -15,6 +15,15 @@ const validateIncome = ({ source, amount }) => {
 export const createIncome = async (req, res) => {
   try {
     const income = await Income.create(req.body);
+    if (req.body.accountId) {
+      const account = await Account.findById(req.body.accountId);
+
+      if (account) {
+        account.balance += Number(req.body.amount);
+
+        await account.save();
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -76,7 +85,7 @@ export const updateIncome = async (req, res) => {
       },
       {
         new: true,
-      }
+      },
     );
 
     res.json({

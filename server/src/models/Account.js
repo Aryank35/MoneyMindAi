@@ -15,6 +15,13 @@ const accountSchema = new mongoose.Schema(
 
     type: {
       type: String,
+      enum: [
+        "Bank",
+        "Cash",
+        "UPI",
+        "Wallet",
+        "Investment",
+      ],
       default: "Bank",
     },
 
@@ -25,12 +32,25 @@ const accountSchema = new mongoose.Schema(
 
     icon: {
       type: String,
-      default: "💳",
+      default: "🏦",
+    },
+
+    color: {
+      type: String,
+      default: "#6366F1",
+    },
+
+    isPrimary: {
+      type: Boolean,
+      default: false,
     },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-export default mongoose.model("Account", accountSchema);
+export default mongoose.model(
+  "Account",
+  accountSchema
+);
