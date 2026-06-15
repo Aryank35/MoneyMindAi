@@ -9,8 +9,6 @@ import {
 } from "../services/wishlistService";
 import { getUserId } from "../utils/auth";
 
-// import { USER_ID } from "../constants/user";
-
 export default function Wishlist() {
   const [wishlist, setWishlist] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -107,6 +105,49 @@ export default function Wishlist() {
 
   const activeGoals = totalGoals - completedGoals;
 
+  const calculateGoalMetrics = (targetAmount, savedAmount, targetDate) => {
+    const remainingAmount = Number(targetAmount) - Number(savedAmount);
+
+    const today = new Date();
+
+    const endDate = new Date(targetDate);
+
+    const daysRemaining = Math.max(
+      1,
+      Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)),
+    );
+
+    const requiredPerDay = remainingAmount / daysRemaining;
+
+    const requiredPerMonth = requiredPerDay * 30;
+
+    return {
+      remainingAmount,
+
+      daysRemaining,
+
+      requiredPerDay,
+
+      requiredPerMonth,
+    };
+  };
+
+  const getGoalStatus = (savedAmount, targetAmount, daysRemaining) => {
+    const progress = (savedAmount / targetAmount) * 100;
+
+    if (progress >= 100) return "Completed";
+
+    if (daysRemaining < 30) return "Urgent";
+
+    if (progress >= 50) return "On Track";
+
+    return "Behind";
+  };
+
+  const fastestGoal = [...wishlist].sort(
+    (a, b) => (b.progressPercentage || 0) - (a.progressPercentage || 0),
+  )[0];
+
   return (
     <DashboardLayout>
       {/* Header */}
@@ -164,46 +205,203 @@ export default function Wishlist() {
         </div>
       </div>
 
-      {/* Goal Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div
+        className="
+    mb-8
+    p-6
+    rounded-3xl
+    bg-gradient-to-r
+    from-indigo-600/20
+    to-purple-600/20
+    border
+    border-indigo-500/20
+  "
+      >
+        <h2 className="text-xl font-bold">Closest Goal 🚀</h2>
+
+        <p className="mt-3 text-slate-300">
+          {fastestGoal
+            ? `${fastestGoal.itemName} is your closest goal.`
+            : "No goals available."}
+        </p>
+      </div>
+
+      {/* Savings Pots */}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {wishlist?.map((item) => {
-          const progress = (item.savedAmount / item.targetAmount) * 100;
+          const metrics = calculateGoalMetrics(
+            item.targetAmount,
+            item.savedAmount,
+            item.targetDate,
+          );
+
+          const progress = Math.min(
+            (item.savedAmount / item.targetAmount) * 100,
+            100,
+          );
+
+          const status = getGoalStatus(
+            item.savedAmount,
+            item.targetAmount,
+            metrics.daysRemaining,
+          );
+
+          const statusColor = {
+            Completed: "bg-green-500/20 text-green-400",
+
+            "On Track": "bg-blue-500/20 text-blue-400",
+
+            Behind: "bg-orange-500/20 text-orange-400",
+
+            Urgent: "bg-red-500/20 text-red-400",
+          };
 
           return (
             <div
               key={item._id}
-              className="bg-white/5 border border-white/10 rounded-2xl p-5"
+              className="
+          bg-gradient-to-br
+          from-indigo-500/10
+          via-purple-500/10
+          to-pink-500/10
+
+          border
+          border-white/10
+
+          rounded-3xl
+          p-6
+
+          hover:scale-[1.02]
+          transition-all
+          duration-300
+        "
             >
-              <div className="flex justify-between">
-                <h3 className="font-bold text-xl">{item.itemName}</h3>
+              {/* Header */}
 
-                <span>{item.priority}</span>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-xl font-bold">{item.itemName}</h3>
+
+                  <p className="text-slate-400 text-sm">
+                    Target: {new Date(item.targetDate).toLocaleDateString()}
+                  </p>
+                </div>
+
+                <span
+                  className={`
+              px-3
+              py-1
+              rounded-full
+              text-xs
+              font-medium
+              ${statusColor[status]}
+            `}
+                >
+                  {status}
+                </span>
               </div>
 
-              <p className="text-slate-400 mt-2">
-                ₹{item.savedAmount} / ₹{item.targetAmount}
-              </p>
+              {/* Amount */}
 
-              <div className="w-full bg-slate-700 h-3 rounded-full mt-4">
-                <div
-                  className="bg-indigo-500 h-3 rounded-full"
-                  style={{
-                    width: `${Math.min(progress, 100)}%`,
-                  }}
-                />
+              <div className="mt-6">
+                <div className="flex justify-between">
+                  <span>Saved</span>
+
+                  <span className="font-semibold">
+                    ₹{Number(item.savedAmount).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between mt-2">
+                  <span>Goal</span>
+
+                  <span className="font-semibold">
+                    ₹{Number(item.targetAmount).toLocaleString()}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex gap-3 mt-5">
+              {/* Progress */}
+
+              <div className="mt-5">
+                <div className="w-full h-3 bg-slate-700 rounded-full">
+                  <div
+                    className="
+                h-3
+                rounded-full
+                bg-gradient-to-r
+                from-indigo-500
+                to-pink-500
+              "
+                    style={{
+                      width: `${progress}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="flex justify-between mt-2 text-sm">
+                  <span>{progress.toFixed(0)}%</span>
+
+                  <span>₹{metrics.remainingAmount.toLocaleString()} left</span>
+                </div>
+              </div>
+
+              {/* Insights */}
+
+              <div className="grid grid-cols-2 gap-3 mt-5">
+                <div className="bg-white/5 p-3 rounded-xl">
+                  <p className="text-xs text-slate-400">Per Day</p>
+
+                  <h4 className="font-semibold">
+                    ₹{Math.ceil(metrics.requiredPerDay)}
+                  </h4>
+                </div>
+
+                <div className="bg-white/5 p-3 rounded-xl">
+                  <p className="text-xs text-slate-400">Per Month</p>
+
+                  <h4 className="font-semibold">
+                    ₹{Math.ceil(metrics.requiredPerMonth)}
+                  </h4>
+                </div>
+
+                <div className="bg-white/5 p-3 rounded-xl">
+                  <p className="text-xs text-slate-400">Days Left</p>
+
+                  <h4 className="font-semibold">{metrics.daysRemaining}</h4>
+                </div>
+
+                <div className="bg-white/5 p-3 rounded-xl">
+                  <p className="text-xs text-slate-400">Priority</p>
+
+                  <h4 className="font-semibold">{item.priority}</h4>
+                </div>
+              </div>
+
+              {/* Actions */}
+
+              <div className="flex gap-3 mt-6">
                 <button
                   onClick={() => handleEdit(item)}
-                  className="px-4 py-2 bg-indigo-600 rounded-lg"
+                  className="
+              flex-1
+              bg-indigo-600
+              py-2
+              rounded-xl
+            "
                 >
                   Edit
                 </button>
 
                 <button
                   onClick={() => handleDelete(item._id)}
-                  className="px-4 py-2 bg-red-600 rounded-lg"
+                  className="
+              flex-1
+              bg-red-600
+              py-2
+              rounded-xl
+            "
                 >
                   Delete
                 </button>
