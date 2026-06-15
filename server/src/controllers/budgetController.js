@@ -34,30 +34,19 @@ const validateCategories = (totalBudget, categories) => {
   return null;
 };
 
-const calculateLimits = (
-  totalBudget
-) => {
-  const now =
-    new Date();
+const calculateLimits = (totalBudget) => {
+  const now = new Date();
 
-  const daysInMonth =
-    new Date(
-      now.getFullYear(),
-      now.getMonth() + 1,
-      0
-    ).getDate();
+  const daysInMonth = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0,
+  ).getDate();
 
   return {
-    dailyLimit:
-      Math.round(
-        totalBudget /
-        daysInMonth
-      ),
+    dailyLimit: Math.round(totalBudget / daysInMonth),
 
-    weeklyLimit:
-      Math.round(
-        totalBudget / 4
-      ),
+    weeklyLimit: Math.round(totalBudget / 4),
   };
 };
 
@@ -79,32 +68,33 @@ export const createBudget = async (req, res) => {
 
     const cleanedCategories = categories.map((category) => ({
       name: category.name.trim(),
+
       limit: Number(category.limit),
+
+      accountId: category.accountId || null,
+
+      type: category.type || "Expense",
+
+      icon: category.icon || "📦",
+
+      color: category.color || "#6366F1",
+
+      spent: Number(category.spent || 0),
     }));
 
-    const {
+    const { dailyLimit, weeklyLimit } = calculateLimits(Number(totalBudget));
+
+    const budget = await Budget.create({
+      userId,
+      month,
+
+      totalBudget: Number(totalBudget),
+
       dailyLimit,
       weeklyLimit,
-    } = calculateLimits(
-      Number(totalBudget)
-    );
 
-    const budget =
-      await Budget.create({
-        userId,
-        month,
-
-        totalBudget:
-          Number(
-            totalBudget
-          ),
-
-        dailyLimit,
-        weeklyLimit,
-
-        categories:
-          cleanedCategories,
-      });
+      categories: cleanedCategories,
+    });
 
     res.status(201).json({
       success: true,
@@ -156,7 +146,18 @@ export const updateBudget = async (req, res) => {
 
     const cleanedCategories = categories.map((category) => ({
       name: category.name.trim(),
+
       limit: Number(category.limit),
+
+      accountId: category.accountId || null,
+
+      type: category.type || "Expense",
+
+      icon: category.icon || "📦",
+
+      color: category.color || "#6366F1",
+
+      spent: Number(category.spent || 0),
     }));
 
     const updatedBudget = await Budget.findByIdAndUpdate(

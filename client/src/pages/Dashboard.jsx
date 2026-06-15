@@ -249,8 +249,6 @@ export default function Dashboard() {
 
         <div className="relative z-10 flex flex-col lg:flex-row justify-between gap-6">
           <div>
-            <p className="text-slate-300">{getGreeting()}</p>
-
             <h1 className="text-5xl font-bold mt-2">
               Hey {currentUser?.name?.split(" ")[0]} 👋
             </h1>
