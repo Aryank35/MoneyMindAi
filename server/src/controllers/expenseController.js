@@ -1,5 +1,6 @@
 import Expense from "../models/Expense.js";
 import Account from "../models/Account.js";
+import { deductBalance, addBalance } from "../helpers/accountBalance.js";
 
 const validateExpense = ({ category, amount }) => {
   if (!category?.trim()) {
@@ -18,13 +19,7 @@ export const createExpense = async (req, res) => {
     const expense = await Expense.create(req.body);
 
     if (req.body.accountId) {
-      const account = await Account.findById(req.body.accountId);
-
-      if (account) {
-        account.balance -= Number(req.body.amount);
-
-        await account.save();
-      }
+      await deductBalance(req.body.accountId, req.body.amount);
     }
 
     res.status(201).json({
@@ -33,6 +28,7 @@ export const createExpense = async (req, res) => {
     });
   } catch (error) {
     console.error("Expense Error:", error);
+
     res.status(500).json({
       success: false,
       message: error.message,
@@ -76,20 +72,34 @@ export const updateExpense = async (req, res) => {
       });
     }
 
+    const existingExpense = await Expense.findById(req.params.id);
+
+    if (!existingExpense) {
+      return res.status(404).json({
+        success: false,
+        message: "Expense not found",
+      });
+    }
+
+    if (existingExpense.accountId) {
+      const account = await Account.findById(existingExpense.accountId);
+
+      if (account) {
+        account.balance += Number(existingExpense.amount);
+
+        account.balance -= Number(amount);
+
+        await account.save();
+      }
+    }
+
     const updatedExpense = await Expense.findByIdAndUpdate(
       req.params.id,
       {
         ...req.body,
-
-        category: category.trim(),
-
         amount: Number(amount),
-
-        note: req.body.note?.trim() || "",
       },
-      {
-        new: true,
-      },
+      { new: true },
     );
 
     res.json({
@@ -106,6 +116,25 @@ export const updateExpense = async (req, res) => {
 
 export const deleteExpense = async (req, res) => {
   try {
+    const expense = await Expense.findById(req.params.id);
+
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: "Expense not found",
+      });
+    }
+
+    if (expense.accountId) {
+      const account = await Account.findById(expense.accountId);
+
+      if (account) {
+        account.balance += Number(expense.amount);
+
+        await account.save();
+      }
+    }
+
     await Expense.findByIdAndDelete(req.params.id);
 
     res.json({

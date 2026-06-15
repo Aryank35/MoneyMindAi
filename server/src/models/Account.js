@@ -15,19 +15,23 @@ const accountSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: [
-        "Bank",
-        "Cash",
-        "UPI",
-        "Wallet",
-        "Investment",
-      ],
+      enum: ["Bank", "Cash", "UPI", "Wallet", "Investment"],
       default: "Bank",
     },
 
     balance: {
       type: Number,
       default: 0,
+    },
+
+    openingBalance: {
+      type: Number,
+      default: 0,
+    },
+
+    accountNumber: {
+      type: String,
+      default: "",
     },
 
     icon: {
@@ -47,10 +51,7 @@ const accountSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-export default mongoose.model(
-  "Account",
-  accountSchema
-);
+export default mongoose.model("Account", accountSchema);

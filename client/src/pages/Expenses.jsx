@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FiPlus, FiSearch, FiFilter, FiTrash2 } from "react-icons/fi";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
+import { getAccountsByUser } from "../services/accountService";
 
 import {
   getExpensesByUser,
@@ -17,7 +18,7 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
 
   const [formData, setFormData] = useState({
-    account: "Primary",
+    account: "",
     category: "",
     amount: "",
     note: "",
@@ -48,27 +49,7 @@ export default function Expenses() {
 
   const [selectedAccount, setSelectedAccount] = useState("all");
 
-  const [accounts, setAccounts] = useState([
-    {
-      _id: "primary",
-      name: "Primary",
-    },
-    {
-      _id: "cash",
-      name: "Cash",
-      balance: 0,
-      color: "#10B981",
-      icon: "💵",
-    },
-    {
-      _id: "upi",
-      name: "UPI",
-    },
-  ]);
-
-  const [showAccountInput, setShowAccountInput] = useState(false);
-
-  const [newAccount, setNewAccount] = useState("");
+  const [accounts, setAccounts] = useState([]);
 
   const fetchExpenses = async () => {
     try {
@@ -82,9 +63,32 @@ export default function Expenses() {
     }
   };
 
+  const fetchAccounts = async () => {
+    try {
+      const response = await getAccountsByUser(getUserId());
+
+      const accountList = response.data || [];
+
+      setAccounts(accountList);
+
+      if (accountList.length > 0 && !formData.account) {
+        setFormData((prev) => ({
+          ...prev,
+          account: accountList[0]._id,
+        }));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
-      await Promise.all([fetchExpenses(), fetchBudgetCategories()]);
+      await Promise.all([
+        fetchExpenses(),
+        fetchBudgetCategories(),
+        fetchAccounts(),
+      ]);
     };
 
     loadData();
@@ -115,6 +119,12 @@ export default function Expenses() {
         return;
       }
 
+      if (selectedAccountData && amount > Number(selectedAccountData.balance)) {
+        alert("Insufficient balance in selected account");
+
+        return;
+      }
+
       const expenseDate = new Date(`${formData.date}T${formData.time}`);
 
       await createExpense({
@@ -139,7 +149,7 @@ export default function Expenses() {
         time: new Date().toTimeString().slice(0, 5),
       });
 
-      await fetchExpenses();
+      await Promise.all([fetchExpenses(), fetchAccounts()]);
     } catch (error) {
       console.error(error);
     }
@@ -149,7 +159,7 @@ export default function Expenses() {
     try {
       await deleteExpense(id);
 
-      fetchExpenses();
+      await Promise.all([fetchExpenses(), fetchAccounts()]);
     } catch (error) {
       console.error(error);
     }
@@ -172,6 +182,29 @@ export default function Expenses() {
       setLoading(false);
     }
   };
+
+  const todayExpense = expenses
+    .filter(
+      (expense) =>
+        new Date(expense.expenseDate).toDateString() ===
+        new Date().toDateString(),
+    )
+    .reduce((sum, expense) => sum + Number(expense.amount), 0);
+
+  const monthExpense = expenses
+    .filter((expense) => {
+      const expenseDate = new Date(expense.expenseDate);
+
+      const now = new Date();
+
+      return (
+        expenseDate.getMonth() === now.getMonth() &&
+        expenseDate.getFullYear() === now.getFullYear()
+      );
+    })
+    .reduce((sum, expense) => sum + Number(expense.amount), 0);
+
+  const remainingBudget = (budget?.totalBudget || 0) - monthExpense;
 
   const accountFilteredExpenses =
     selectedAccount === "all"
@@ -221,6 +254,26 @@ export default function Expenses() {
     0,
   );
 
+  const progress = budget?.totalBudget
+    ? ((monthExpense / budget.totalBudget) * 100).toFixed(1)
+    : 0;
+
+  const selectedAccountData = accounts.find(
+    (account) => account._id === formData.account,
+  );
+
+  const categoryBudget = budgetCategories.find(
+    (category) => category.name === formData.category,
+  );
+
+  const categorySpent = expenses
+    .filter((expense) => expense.category === formData.category)
+    .reduce((sum, expense) => sum + Number(expense.amount), 0);
+
+  const remainingAccountBalance = selectedAccountData
+    ? Number(selectedAccountData.balance) - Number(formData.amount || 0)
+    : 0;
+
   return (
     <DashboardLayout>
       {/* Header */}
@@ -230,6 +283,34 @@ export default function Expenses() {
           <h1 className="text-4xl font-bold">Expenses</h1>
 
           <p className="text-slate-400 mt-2">Track and manage your spending</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-5">
+          <p className="text-slate-400">Today</p>
+          <h2 className="text-2xl font-bold">
+            ₹{todayExpense.toLocaleString()}
+          </h2>
+        </div>
+
+        <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-5">
+          <p className="text-slate-400">This Month</p>
+          <h2 className="text-2xl font-bold">
+            ₹{monthExpense.toLocaleString()}
+          </h2>
+        </div>
+
+        <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-5">
+          <p className="text-slate-400">Budget Left</p>
+          <h2 className="text-2xl font-bold">
+            ₹{remainingBudget.toLocaleString()}
+          </h2>
+        </div>
+
+        <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-5">
+          <p className="text-slate-400">Transactions</p>
+          <h2 className="text-2xl font-bold">{expenses.length}</h2>
         </div>
       </div>
 
@@ -246,11 +327,6 @@ export default function Expenses() {
           <select
             value={formData.account}
             onChange={(e) => {
-              if (e.target.value === "__new_account__") {
-                setShowAccountInput(true);
-                return;
-              }
-
               setFormData({
                 ...formData,
                 account: e.target.value,
@@ -258,65 +334,13 @@ export default function Expenses() {
             }}
             className="bg-slate-800 rounded-xl p-3 border border-slate-700"
           >
+            <option value="">Select Account</option>
             {accounts.map((account) => (
               <option key={account._id} value={account._id}>
                 {account.name}
               </option>
             ))}
-
-            <option value="__new_account__">+ Add Account</option>
           </select>
-
-          {showAccountInput && (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Account Name"
-                value={newAccount}
-                onChange={(e) => setNewAccount(e.target.value)}
-                className="flex-1 bg-slate-800 rounded-xl p-3"
-              />
-
-              <button
-                onClick={() => {
-                  const cleanedName = newAccount.trim();
-
-                  if (!cleanedName) {
-                    alert("Enter account name");
-                    return;
-                  }
-
-                  const exists = accounts.some(
-                    (account) =>
-                      account.name.toLowerCase() === cleanedName.toLowerCase(),
-                  );
-
-                  if (exists) {
-                    alert("Account already exists");
-                    return;
-                  }
-                  const account = {
-                    _id: Date.now().toString(),
-                    name: cleanedName,
-                  };
-
-                  setAccounts([...accounts, account]);
-
-                  setFormData({
-                    ...formData,
-                    account: account._id,
-                  });
-
-                  setNewAccount("");
-
-                  setShowAccountInput(false);
-                }}
-                className="bg-indigo-600 px-4 rounded-xl"
-              >
-                Add
-              </button>
-            </div>
-          )}
 
           <div className="space-y-2">
             <select
@@ -483,6 +507,73 @@ export default function Expenses() {
             />
           </div>
         </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+          {accounts.map((account) => (
+            <button
+              key={account._id}
+              onClick={() =>
+                setFormData({
+                  ...formData,
+                  account: account._id,
+                })
+              }
+              className={`
+        p-4 rounded-2xl
+        border transition-all
+        ${
+          formData.account === account._id
+            ? "border-indigo-500 bg-indigo-500/10"
+            : "border-slate-700 bg-slate-800"
+        }
+      `}
+            >
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                style={{
+                  backgroundColor: account.color + "30",
+                }}
+              >
+                {account.icon || "🏦"}
+              </div>
+              <h3 className="font-semibold mt-2">{account.name}</h3>
+
+              <p className="text-xs text-slate-400">{account.type}</p>
+
+              <p className="text-green-400 mt-2">
+                ₹{Number(account.balance || 0).toLocaleString()}
+              </p>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4 p-4 rounded-xl bg-slate-800 border border-slate-700">
+          <div
+            className="mt-4 rounded-2xl p-5 border"
+            style={{
+              borderColor: selectedAccountData?.color || "#6366F1",
+            }}
+          >
+            <h3 className="font-bold text-lg">
+              {selectedAccountData?.icon} {selectedAccountData?.name}
+            </h3>
+
+            <p className="text-slate-400">{selectedAccountData?.type}</p>
+
+            <p className="text-2xl font-bold text-green-400 mt-2">
+              ₹{Number(selectedAccountData?.balance || 0).toLocaleString()}
+            </p>
+          </div>
+
+          <h3 className="font-semibold">{selectedAccountData?.name}</h3>
+
+          <p className="text-green-400">
+            Available Balance: ₹
+            {Number(selectedAccountData?.balance || 0).toLocaleString()}
+          </p>
+          <p className="text-slate-400 text-xs">
+            Used ₹{categorySpent} / ₹{categoryBudget?.limit || 0}
+          </p>
+        </div>
 
         <button
           onClick={handleAddExpense}
@@ -491,6 +582,16 @@ export default function Expenses() {
           <FiPlus />
           Save Expense
         </button>
+        {remainingAccountBalance < 0 && (
+          <p className="text-red-500 text-sm mt-2">⚠ Insufficient balance</p>
+        )}
+
+        <p className="text-yellow-400 mt-2">
+          Balance After Expense: ₹{remainingAccountBalance.toLocaleString()}
+        </p>
+        <p className="text-xs text-slate-400">
+          Monthly Limit: ₹{categoryBudget?.limit || 0}
+        </p>
       </div>
 
       {/* Search */}
@@ -588,10 +689,35 @@ export default function Expenses() {
 
       <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 mb-4">
         <h3 className="font-semibold">Filter Results</h3>
+        <div className="bg-slate-800 rounded-xl p-4 mb-5">
+          <div className="flex justify-between">
+            <span>Showing {filteredExpenses.length} expenses</span>
+
+            <span className="font-bold text-red-400">
+              ₹{filteredTotal.toLocaleString()}
+            </span>
+          </div>
+        </div>
 
         <p>{filteredExpenses.length} expenses found</p>
 
         <p>Total Amount: ₹{filteredTotal.toLocaleString()}</p>
+      </div>
+
+      <div className="mb-6">
+        <div className="flex justify-between mb-2">
+          <span>Budget Usage</span>
+          <span>{progress}%</span>
+        </div>
+
+        <div className="h-3 bg-slate-700 rounded-full">
+          <div
+            className="h-3 bg-indigo-500 rounded-full"
+            style={{
+              width: `${progress}%`,
+            }}
+          />
+        </div>
       </div>
       {/* Expense Table */}
 
@@ -626,8 +752,19 @@ export default function Expenses() {
                     className="border-b border-white/5 hover:bg-white/5 transition"
                   >
                     <td className="p-5">
-                      {accounts.find((a) => a._id === expense.accountId)
-                        ?.name || "Unknown"}
+                      {(() => {
+                        const account = accounts.find(
+                          (a) => a._id === expense.accountId,
+                        );
+
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span>{account?.icon}</span>
+
+                            <span>{account?.name || "Deleted Account"}</span>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     <td className="p-5">
@@ -636,7 +773,20 @@ export default function Expenses() {
                         : "N/A"}
                     </td>
 
-                    <td className="p-5">{expense.category}</td>
+                    <td className="p-5">
+                      <span
+                        className="
+      px-3
+      py-1
+      rounded-full
+      bg-indigo-500/20
+      text-indigo-300
+      text-xs
+    "
+                      >
+                        {expense.category}
+                      </span>
+                    </td>
 
                     <td className="p-5 text-slate-400">{expense.note}</td>
 

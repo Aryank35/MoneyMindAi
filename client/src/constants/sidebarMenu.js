@@ -30,11 +30,6 @@ export const SIDEBAR_MENU = [
     icon: FiDollarSign,
   },
   {
-    label: "Goals",
-    path: "/goals",
-    icon: FiTarget,
-  },
-  {
     label: "Wishlist",
     path: "/wishlist",
     icon: FiHeart,

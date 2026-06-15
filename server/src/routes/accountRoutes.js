@@ -13,8 +13,6 @@ router.post("/", createAccount);
 
 router.get("/user/:userId", getAccountsByUser);
 
-app.use("/api/accounts", accountRoutes);
-
 router.put("/:id", updateAccount);
 
 router.delete("/:id", deleteAccount);
