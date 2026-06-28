@@ -65,7 +65,10 @@ export default function Wishlist() {
 
       await loadWishlist();
     } catch (error) {
-      console.error(error);
+      console.error(
+        "Wishlist Save Error:",
+        error.response?.data || error.message,
+      );
     }
   };
 

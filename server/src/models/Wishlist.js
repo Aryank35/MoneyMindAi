@@ -159,10 +159,10 @@ const wishlistSchema = new mongoose.Schema(
   },
 );
 
-wishlistSchema.pre("save", function (next) {
-  const target = Number(this.targetAmount);
+wishlistSchema.pre("save", async function () {
+  const target = Number(this.targetAmount || 0);
 
-  const saved = Number(this.savedAmount);
+  const saved = Number(this.savedAmount || 0);
 
   this.remainingAmount = Math.max(target - saved, 0);
 
@@ -196,8 +196,6 @@ wishlistSchema.pre("save", function (next) {
   } else {
     this.status = "Behind";
   }
-
-  next();
 });
 
 export default mongoose.model("Wishlist", wishlistSchema);
