@@ -8,6 +8,7 @@ import budgetRoutes from "./routes/budgetRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import incomeRoutes from "./routes/incomeRoutes.js";
 import accountRoutes from "./routes/accountRoutes.js";
+import planRoutes from "./routes/planRoutes.js";
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/budget", budgetRoutes);
 app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/plans", planRoutes);
 
 app.use("/api/income", incomeRoutes);
 

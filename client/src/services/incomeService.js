@@ -18,6 +18,10 @@ export const updateIncome = async (id, incomeData) => {
   return response.data;
 };
 
+export const getIncomeSummary = async (userId) => {
+  return api.get(`/income/summary/${userId}`);
+};
+
 export const deleteIncome = async (id) => {
   const response = await api.delete(`/income/${id}`);
 
