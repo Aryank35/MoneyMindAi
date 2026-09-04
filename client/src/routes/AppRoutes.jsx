@@ -11,6 +11,7 @@ import ProtectedRoute from "./ProtectedRoute";
 import Analytics from "../pages/Analytics";
 import Income from "../pages/Income";
 import Accounts from "../pages/Accounts";
+import Transfer from "../pages/Transfer";
 
 export default function AppRoutes() {
   return (
@@ -41,6 +42,8 @@ export default function AppRoutes() {
         <Route path="/analytics" element={<Analytics />} />
 
         <Route path="/accounts" element={<Accounts />} />
+
+        <Route path="/transfer" element={<Transfer />} />
       </Routes>
     </BrowserRouter>
   );

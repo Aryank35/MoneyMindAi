@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { FiCreditCard } from "react-icons/fi";
 
 import {
   createAccount,
@@ -9,8 +11,15 @@ import {
 
 import { getUserId } from "../utils/auth";
 import DashboardLayout from "../components/layout/DashboardLayout";
+import { useToast } from "../components/common/Toast";
+import EmptyState from "../components/common/EmptyState";
+import Modal from "../components/common/Modal";
+import Button from "../components/common/Button";
+import Input, { Select } from "../components/common/Input";
 
 export default function Accounts() {
+  const toast = useToast();
+
   const [accounts, setAccounts] = useState([]);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -21,9 +30,13 @@ export default function Accounts() {
 
   const [deleteText, setDeleteText] = useState("");
 
+  const [deleting, setDeleting] = useState(false);
+
   const [showEditModal, setShowEditModal] = useState(false);
 
   const [editingAccount, setEditingAccount] = useState(null);
+
+  const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -69,15 +82,21 @@ export default function Accounts() {
   };
 
   useEffect(() => {
-    loadAccounts();
+    const loadData = async () => {
+      await loadAccounts();
+    };
+
+    loadData();
   }, []);
 
   const handleSave = async () => {
     try {
       if (!formData.name || !formData.balance) {
-        alert("Please fill all fields");
+        toast.error("Please fill all fields");
         return;
       }
+
+      setSaving(true);
 
       const payload = {
         ...formData,
@@ -85,11 +104,7 @@ export default function Accounts() {
         userId: getUserId(),
       };
 
-      console.log("Creating Account:", payload);
-
-      const response = await createAccount(payload);
-
-      console.log("Account Created:", response);
+      await createAccount(payload);
 
       setFormData({
         name: "",
@@ -100,34 +115,52 @@ export default function Accounts() {
       setShowCreateModal(false);
 
       await loadAccounts();
+
+      toast.success("Account created");
     } catch (error) {
       console.error(error);
 
-      alert(
+      toast.error(
         error?.response?.data?.message ||
           error.message ||
           "Failed to create account",
       );
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDelete = async () => {
     if (deleteText !== "DELETE") return;
 
-    await deleteAccount(selectedAccount._id);
+    setDeleting(true);
 
-    setDeleteText("");
+    try {
+      await deleteAccount(selectedAccount._id);
 
-    setSelectedAccount(null);
+      setDeleteText("");
 
-    setShowDeleteModal(false);
+      setSelectedAccount(null);
 
-    loadAccounts();
+      setShowDeleteModal(false);
+
+      await loadAccounts();
+
+      toast.success("Account deleted");
+    } catch (error) {
+      console.error(error);
+
+      toast.error(error?.response?.data?.message || "Failed to delete account");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleUpdate = async () => {
     try {
       if (!editingAccount) return;
+
+      setSaving(true);
 
       await updateAccount(editingAccount._id, {
         ...formData,
@@ -145,10 +178,14 @@ export default function Accounts() {
       });
 
       await loadAccounts();
+
+      toast.success("Account updated");
     } catch (error) {
       console.error(error);
 
-      alert(error?.response?.data?.message || "Failed to update account");
+      toast.error(error?.response?.data?.message || "Failed to update account");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -188,37 +225,45 @@ export default function Accounts() {
           <p className="mt-3 opacity-80">Across {accounts.length} accounts</p>
         </div>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="
-    mb-8
-    px-5
-    py-3
-    rounded-xl
-    bg-indigo-600
-    hover:bg-indigo-700
-    font-semibold
-  "
-        >
+        <Button onClick={() => setShowCreateModal(true)} className="mb-8">
           + Add Account
-        </button>
+        </Button>
 
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {accounts.map((account) => {
-            const theme = accountThemes[account.type] || accountThemes.Bank;
+        {accounts.length === 0 ? (
+          <EmptyState
+            icon={FiCreditCard}
+            title="No accounts yet"
+            message="Add your first bank account, wallet, or payment method to get started."
+          />
+        ) : (
+          <motion.div
+            className="grid md:grid-cols-2 xl:grid-cols-3 gap-6"
+            initial="hidden"
+            animate="visible"
+            variants={{
+              hidden: {},
+              visible: { transition: { staggerChildren: 0.05 } },
+            }}
+          >
+            {accounts.map((account) => {
+              const theme = accountThemes[account.type] || accountThemes.Bank;
 
-            const allocation =
-              totalAssets > 0
-                ? ((Number(account.balance) / totalAssets) * 100).toFixed(1)
-                : 0;
+              const allocation =
+                totalAssets > 0
+                  ? ((Number(account.balance) / totalAssets) * 100).toFixed(1)
+                  : 0;
 
-            return (
-              <div
-                key={account._id}
-                className={`
+              return (
+                <motion.div
+                  key={account._id}
+                  variants={{
+                    hidden: { opacity: 0, y: 12 },
+                    visible: { opacity: 1, y: 0 },
+                  }}
+                  className={`
             relative
             overflow-hidden
-            rounded-3xl
+            rounded-2xl
             p-6
             bg-gradient-to-br
             ${theme.gradient}
@@ -226,43 +271,44 @@ export default function Accounts() {
             hover:scale-[1.03]
             transition-all
           `}
-              >
-                <div className="flex justify-between">
-                  <div className="text-5xl">{theme.icon}</div>
+                >
+                  <div className="flex justify-between">
+                    <div className="text-5xl">{theme.icon}</div>
 
-                  <div className="text-xs opacity-70">
-                    **** {String(account._id).slice(-4)}
-                  </div>
-                </div>
-
-                <h2 className="mt-8 text-xl font-bold">{account.name}</h2>
-
-                <p className="opacity-80">{account.type}</p>
-
-                <h3 className="text-4xl font-bold mt-4">
-                  ₹{Number(account.balance).toLocaleString()}
-                </h3>
-
-                <div className="mt-4">
-                  <div className="w-full h-2 bg-white/20 rounded-full">
-                    <div
-                      className="h-2 bg-white rounded-full"
-                      style={{
-                        width: `${allocation}%`,
-                      }}
-                    />
+                    <div className="text-xs opacity-70">
+                      **** {String(account._id).slice(-4)}
+                    </div>
                   </div>
 
-                  <p className="text-xs mt-2">{allocation}% of assets</p>
-                </div>
+                  <h2 className="mt-8 text-xl font-bold">{account.name}</h2>
 
-                <button
-                  onClick={() => {
-                    setSelectedAccount(account);
+                  <p className="opacity-80">{account.type}</p>
 
-                    setShowDeleteModal(true);
-                  }}
-                  className="
+                  <h3 className="text-4xl font-bold mt-4">
+                    ₹{Number(account.balance).toLocaleString()}
+                  </h3>
+
+                  <div className="mt-4">
+                    <div className="w-full h-2 bg-white/20 rounded-full">
+                      <div
+                        className="h-2 bg-white rounded-full"
+                        style={{
+                          width: `${allocation}%`,
+                        }}
+                      />
+                    </div>
+
+                    <p className="text-xs mt-2">{allocation}% of assets</p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setSelectedAccount(account);
+
+                      setShowDeleteModal(true);
+                    }}
+                    aria-label={`Delete ${account.name}`}
+                    className="
               mt-6
               w-full
               py-2
@@ -270,221 +316,218 @@ export default function Accounts() {
               bg-red-500/20
               text-red-200
             "
-                >
-                  Delete
-                </button>
+                  >
+                    Delete
+                  </button>
 
-                <button
-                  onClick={() => {
-                    setEditingAccount(account);
+                  <button
+                    onClick={() => {
+                      setEditingAccount(account);
 
-                    setFormData({
-                      name: account.name,
-                      type: account.type,
-                      balance: account.balance,
-                    });
+                      setFormData({
+                        name: account.name,
+                        type: account.type,
+                        balance: account.balance,
+                      });
 
-                    setShowEditModal(true);
-                  }}
-                  className="
-    mt-6
+                      setShowEditModal(true);
+                    }}
+                    aria-label={`Edit ${account.name}`}
+                    className="
+    mt-2
               w-full
               py-2
               rounded-xl
-              bg-red-500/20
-              text-red-200
+              bg-white/10
+              hover:bg-white/20
+              transition
   "
-                >
-                  Edit
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        {showCreateModal && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-slate-900 p-6 rounded-3xl w-full max-w-md">
-              <h2 className="text-2xl font-bold mb-5">Create Account</h2>
-
-              <div className="space-y-4">
-                <input
-                  placeholder="Account Name"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      name: e.target.value,
-                    })
-                  }
-                  className="w-full bg-slate-800 p-3 rounded-xl"
-                />
-
-                <select
-                  value={formData.type}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      type: e.target.value,
-                    })
-                  }
-                  className="w-full bg-slate-800 p-3 rounded-xl"
-                >
-                  <option>Bank</option>
-                  <option>Cash</option>
-                  <option>UPI</option>
-                  <option>Wallet</option>
-                  <option>Credit Card</option>
-                </select>
-
-                <input
-                  type="number"
-                  placeholder="Opening Balance"
-                  value={formData.balance}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      balance: e.target.value,
-                    })
-                  }
-                  className="w-full bg-slate-800 p-3 rounded-xl"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 bg-slate-700 rounded-xl"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={handleSave}
-                  className="px-4 py-2 bg-indigo-600 rounded-xl"
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </div>
+                  >
+                    Edit
+                  </button>
+                </motion.div>
+              );
+            })}
+          </motion.div>
         )}
 
-        {showDeleteModal && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-slate-900 p-6 rounded-3xl w-full max-w-md">
-              <h2 className="text-2xl font-bold text-red-400">
-                Delete Account
-              </h2>
+        <Modal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          title="Create Account"
+        >
+          <div className="space-y-4">
+            <Input
+              label="Account Name"
+              placeholder="Account Name"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  name: e.target.value,
+                })
+              }
+            />
 
-              <p className="mt-4 text-slate-300">Type DELETE to confirm.</p>
+            <Select
+              label="Account Type"
+              value={formData.type}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  type: e.target.value,
+                })
+              }
+            >
+              <option>Bank</option>
+              <option>Cash</option>
+              <option>UPI</option>
+              <option>Wallet</option>
+              <option>Credit Card</option>
+            </Select>
 
-              <input
-                value={deleteText}
-                onChange={(e) => setDeleteText(e.target.value)}
-                className="w-full mt-4 bg-slate-800 p-3 rounded-xl"
-              />
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => {
-                    setDeleteText("");
-
-                    setShowDeleteModal(false);
-                  }}
-                  className="px-4 py-2 bg-slate-700 rounded-xl"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  disabled={deleteText !== "DELETE"}
-                  onClick={handleDelete}
-                  className="
-            px-4
-            py-2
-            rounded-xl
-            bg-red-600
-            disabled:opacity-40
-          "
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
+            <Input
+              label="Opening Balance"
+              type="number"
+              placeholder="Opening Balance"
+              value={formData.balance}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  balance: e.target.value,
+                })
+              }
+            />
           </div>
-        )}
 
-        {showEditModal && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-slate-900 p-6 rounded-3xl w-full max-w-md">
-              <h2 className="text-2xl font-bold mb-5">Edit Account</h2>
+          <div className="flex justify-end gap-3 mt-6">
+            <Button
+              variant="secondary"
+              onClick={() => setShowCreateModal(false)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
 
-              <div className="space-y-4">
-                <input
-                  placeholder="Account Name"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      name: e.target.value,
-                    })
-                  }
-                  className="w-full bg-slate-800 p-3 rounded-xl"
-                />
-
-                <select
-                  value={formData.type}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      type: e.target.value,
-                    })
-                  }
-                  className="w-full bg-slate-800 p-3 rounded-xl"
-                >
-                  <option>Bank</option>
-                  <option>Cash</option>
-                  <option>UPI</option>
-                  <option>Wallet</option>
-                  <option>Credit Card</option>
-                </select>
-
-                <input
-                  type="number"
-                  placeholder="Balance"
-                  value={formData.balance}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      balance: e.target.value,
-                    })
-                  }
-                  className="w-full bg-slate-800 p-3 rounded-xl"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setEditingAccount(null);
-                  }}
-                  className="px-4 py-2 bg-slate-700 rounded-xl"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={handleUpdate}
-                  className="px-4 py-2 bg-emerald-600 rounded-xl"
-                >
-                  Update
-                </button>
-              </div>
-            </div>
+            <Button onClick={handleSave} loading={saving}>
+              Create
+            </Button>
           </div>
-        )}
+        </Modal>
+
+        <Modal
+          isOpen={showDeleteModal}
+          onClose={() => (deleting ? null : setShowDeleteModal(false))}
+          title="Delete Account"
+          maxWidth="max-w-sm"
+        >
+          <p className="text-slate-300">
+            This will permanently delete{" "}
+            <span className="font-semibold">{selectedAccount?.name}</span>.
+            Type <span className="font-mono text-red-300">DELETE</span> to
+            confirm.
+          </p>
+
+          <Input
+            containerClassName="mt-4"
+            value={deleteText}
+            onChange={(e) => setDeleteText(e.target.value)}
+            aria-label="Type DELETE to confirm"
+          />
+
+          <div className="flex justify-end gap-3 mt-6">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDeleteText("");
+
+                setShowDeleteModal(false);
+              }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              variant="danger"
+              disabled={deleteText !== "DELETE"}
+              loading={deleting}
+              onClick={handleDelete}
+            >
+              Delete
+            </Button>
+          </div>
+        </Modal>
+
+        <Modal
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingAccount(null);
+          }}
+          title="Edit Account"
+        >
+          <div className="space-y-4">
+            <Input
+              label="Account Name"
+              placeholder="Account Name"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  name: e.target.value,
+                })
+              }
+            />
+
+            <Select
+              label="Account Type"
+              value={formData.type}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  type: e.target.value,
+                })
+              }
+            >
+              <option>Bank</option>
+              <option>Cash</option>
+              <option>UPI</option>
+              <option>Wallet</option>
+              <option>Credit Card</option>
+            </Select>
+
+            <Input
+              label="Balance"
+              type="number"
+              placeholder="Balance"
+              value={formData.balance}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  balance: e.target.value,
+                })
+              }
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowEditModal(false);
+                setEditingAccount(null);
+              }}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+
+            <Button onClick={handleUpdate} loading={saving}>
+              Update
+            </Button>
+          </div>
+        </Modal>
       </div>
     </DashboardLayout>
   );

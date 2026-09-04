@@ -1,7 +1,19 @@
 import { NavLink } from "react-router-dom";
+import { FiX } from "react-icons/fi";
 import { SIDEBAR_MENU } from "../../constants/sidebarMenu";
+import { getCurrentUser } from "../../utils/auth";
+import Logo from "../common/Logo";
+import { getHealthLabel } from "../../utils/financialHealth";
 
-export default function Sidebar({ closeSidebar }) {
+export default function Sidebar({ closeSidebar, health }) {
+  const currentUser = getCurrentUser();
+
+  const displayName = currentUser?.name || "User";
+
+  const avatarInitial = displayName.charAt(0).toUpperCase();
+
+  const healthLabel = getHealthLabel(health?.score, health?.hasData);
+
   return (
     <aside
       className="
@@ -28,32 +40,39 @@ export default function Sidebar({ closeSidebar }) {
           border-slate-800
           flex
           items-center
+          justify-between
           gap-4
         "
       >
-        <div
+        <div className="flex items-center gap-4">
+          <Logo size="md" />
+
+          <div>
+            <h2 className="font-bold text-lg text-white">MoneyMind AI</h2>
+
+            <p className="text-xs text-slate-400">Smart Finance Tracker</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={closeSidebar}
+          aria-label="Close menu"
           className="
-            w-12
-            h-12
-            rounded-2xl
-            bg-gradient-to-r
-            from-indigo-500
-            via-purple-500
-            to-pink-500
+            lg:hidden
+            w-9
+            h-9
+            rounded-xl
+            bg-slate-900
             flex
             items-center
             justify-center
-            text-xl
+            text-white
+            hover:bg-slate-800
           "
         >
-          💰
-        </div>
-
-        <div>
-          <h2 className="font-bold text-lg text-white">MoneyMind AI</h2>
-
-          <p className="text-xs text-slate-400">Smart Finance Tracker</p>
-        </div>
+          <FiX size={18} />
+        </button>
       </div>
 
       {/* Navigation */}
@@ -158,21 +177,19 @@ export default function Sidebar({ closeSidebar }) {
         >
           <p className="text-xs opacity-80">Financial Health</p>
 
-          <h3 className="text-xl font-bold mt-1">Excellent</h3>
+          <h3 className="text-xl font-bold mt-1">{healthLabel}</h3>
 
           <div className="mt-3">
             <div className="w-full h-2 bg-white/20 rounded-full">
               <div
-                className="
-                  h-2
-                  rounded-full
-                  bg-white
-                  w-[75%]
-                "
+                className="h-2 rounded-full bg-white transition-all duration-300"
+                style={{ width: `${health?.score ?? 0}%` }}
               />
             </div>
 
-            <p className="text-xs mt-2">75% Score</p>
+            <p className="text-xs mt-2">
+              {health ? health.message : "Calculating your score..."}
+            </p>
           </div>
         </div>
       </div>
@@ -210,11 +227,11 @@ export default function Sidebar({ closeSidebar }) {
               font-bold
             "
           >
-            A
+            {avatarInitial}
           </div>
 
           <div>
-            <h4 className="font-semibold text-white">Aryan</h4>
+            <h4 className="font-semibold text-white">{displayName}</h4>
 
             <p className="text-xs text-slate-400">Premium User</p>
           </div>

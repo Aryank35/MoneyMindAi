@@ -1,10 +1,14 @@
 import DashboardLayout from "../components/layout/DashboardLayout";
 import { useEffect, useMemo, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   FiCalendar,
   FiCheckCircle,
+  FiClock,
   FiEdit2,
   FiFilter,
+  FiInbox,
+  FiPieChart,
   FiPlus,
   FiSearch,
   FiTrash2,
@@ -25,6 +29,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+import Modal from "../components/common/Modal";
+import ConfirmDialog from "../components/common/ConfirmDialog";
+import Button from "../components/common/Button";
+import Input, { Select } from "../components/common/Input";
+import EmptyState from "../components/common/EmptyState";
+import { Skeleton } from "../components/common/Loader";
+import { useToast } from "../components/common/Toast";
 
 import {
   getIncomesByUser,
@@ -147,12 +159,65 @@ const getRecurringDay = (income) => {
   return income.incomeDate ? new Date(income.incomeDate) : null;
 };
 
+// Shared label + input/select wrapper used across the add/edit modal so the
+// same 3-part markup (label, field, wrapper) isn't hand-rolled per field.
+function FormField({
+  label,
+  type = "text",
+  options,
+  placeholder,
+  containerClassName,
+  className,
+  ...props
+}) {
+  if (type === "select") {
+    return (
+      <Select
+        label={label}
+        className={className}
+        containerClassName={containerClassName}
+        {...props}
+      >
+        {placeholder && <option value="">{placeholder}</option>}
+        {(options || []).map((option) => {
+          const isObject = typeof option === "object" && option !== null;
+          const value = isObject ? option.value : option;
+          const optionLabel = isObject ? option.label : option;
+
+          return (
+            <option key={value} value={value}>
+              {optionLabel}
+            </option>
+          );
+        })}
+      </Select>
+    );
+  }
+
+  return (
+    <Input
+      label={label}
+      type={type}
+      placeholder={placeholder}
+      className={className}
+      containerClassName={containerClassName}
+      {...props}
+    />
+  );
+}
+
 export default function Income() {
+  const toast = useToast();
+  const shouldReduceMotion = useReducedMotion();
+
   const [incomes, setIncomes] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingIncome, setEditingIncome] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [formData, setFormData] = useState(createEmptyForm);
   const [filters, setFilters] = useState({
     month: "all",
@@ -163,6 +228,15 @@ export default function Income() {
     recurring: "all",
     search: "",
   });
+
+  const motionProps = (delay = 0) =>
+    shouldReduceMotion
+      ? {}
+      : {
+          initial: { opacity: 0, y: 16 },
+          animate: { opacity: 1, y: 0 },
+          transition: { duration: 0.4, delay, ease: "easeOut" },
+        };
 
   const loadIncomePage = async () => {
     try {
@@ -182,6 +256,7 @@ export default function Income() {
       }));
     } catch (error) {
       console.error(error);
+      toast.error("Failed to load income data");
     } finally {
       setLoading(false);
     }
@@ -193,6 +268,7 @@ export default function Income() {
     }, 0);
 
     return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const accountMap = useMemo(
@@ -477,17 +553,24 @@ export default function Income() {
     setShowModal(true);
   };
 
-  const handleSaveIncome = async () => {
-    try {
-      if (!formData.accountId) {
-        alert("Please select deposit account");
-        return;
-      }
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingIncome(null);
+  };
 
-      if (depositAmount <= 0) {
-        alert("Please enter a valid income amount");
-        return;
-      }
+  const handleSaveIncome = async () => {
+    if (!formData.accountId) {
+      toast.error("Please select deposit account");
+      return;
+    }
+
+    if (depositAmount <= 0) {
+      toast.error("Please enter a valid income amount");
+      return;
+    }
+
+    try {
+      setSaving(true);
 
       const incomeDate = new Date(`${formData.date}T${formData.time}`);
       const isSalary = formData.source === "Salary";
@@ -528,34 +611,56 @@ export default function Income() {
 
       if (editingIncome) {
         await updateIncome(editingIncome._id, payload);
+        toast.success("Income updated successfully");
       } else {
         await createIncome(payload);
+        toast.success("Income added successfully");
       }
 
-      setShowModal(false);
-      setEditingIncome(null);
+      closeModal();
       await loadIncomePage();
     } catch (error) {
       console.error("Income Save Error:", error);
-      alert(error?.response?.data?.message || "Failed to save income");
+      toast.error(error?.response?.data?.message || "Failed to save income");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDeleteIncome = async (id) => {
+  const handleDeleteIncome = async () => {
+    if (!deleteTarget) return;
+
     try {
-      await deleteIncome(id);
+      setDeleting(true);
+      await deleteIncome(deleteTarget._id);
+      toast.success("Income entry deleted");
+      setDeleteTarget(null);
       await loadIncomePage();
     } catch (error) {
       console.error(error);
-      alert(error?.response?.data?.message || "Failed to delete income");
+      toast.error(error?.response?.data?.message || "Failed to delete income");
+    } finally {
+      setDeleting(false);
     }
   };
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-[70vh] items-center justify-center text-slate-300">
-          Loading Income...
+        <div className="min-h-screen bg-slate-950 text-white">
+          <div className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
+          </div>
+          <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton key={index} className="h-24" />
+            ))}
+          </div>
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Skeleton className="h-72" />
+            <Skeleton className="h-72" />
+          </div>
         </div>
       </DashboardLayout>
     );
@@ -564,8 +669,11 @@ export default function Income() {
   return (
     <DashboardLayout>
       <div className="min-h-screen bg-slate-950 text-white">
-        <section className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-          <div className="rounded-lg border border-emerald-400/20 bg-slate-900 p-5 shadow-2xl shadow-emerald-950/20">
+        <motion.section
+          {...motionProps(0)}
+          className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]"
+        >
+          <div className="rounded-2xl border border-emerald-400/20 bg-slate-900 p-5 shadow-2xl shadow-emerald-950/20">
             <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">
@@ -577,7 +685,7 @@ export default function Income() {
               </div>
               <button
                 onClick={openAddModal}
-                className="flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-3 font-semibold text-slate-950 hover:bg-emerald-400"
+                className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-slate-950 transition-colors hover:bg-emerald-400"
               >
                 <FiPlus />
                 Add Income
@@ -598,7 +706,7 @@ export default function Income() {
               ].map(([label, value]) => (
                 <div
                   key={label}
-                  className="rounded-lg border border-white/10 bg-white/[0.04] p-4"
+                  className="rounded-xl border border-white/10 bg-white/[0.04] p-4"
                 >
                   <p className="text-sm text-slate-400">{label}</p>
                   <p className="mt-2 break-words text-2xl font-bold">{value}</p>
@@ -607,7 +715,7 @@ export default function Income() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <p className="text-sm text-slate-400">AI Suggestions</p>
             <div className="mt-4 space-y-3 text-sm">
               <p>
@@ -623,10 +731,10 @@ export default function Income() {
               </p>
               <p>Expected Annual Savings {shortMoney(analytics.expectedSavings)}</p>
               <div className="grid gap-2 pt-2 sm:grid-cols-2">
-                <span className="rounded-lg bg-emerald-500/10 p-3 text-emerald-200">
+                <span className="rounded-xl bg-emerald-500/10 p-3 text-emerald-200">
                   Salary growth {analytics.salaryGrowth}%
                 </span>
-                <span className="rounded-lg bg-cyan-500/10 p-3 text-cyan-200">
+                <span className="rounded-xl bg-cyan-500/10 p-3 text-cyan-200">
                   Passive income {analytics.totalIncome
                     ? Math.round((analytics.passiveIncome / analytics.totalIncome) * 100)
                     : 0}%
@@ -634,9 +742,12 @@ export default function Income() {
               </div>
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <motion.section
+          {...motionProps(0.05)}
+          className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+        >
           {[
             ["Total Income", analytics.totalIncome, "text-emerald-300"],
             ["Recurring Income", analytics.recurringIncome, "text-cyan-300"],
@@ -646,7 +757,7 @@ export default function Income() {
           ].map(([label, value, color]) => (
             <div
               key={label}
-              className="rounded-lg border border-white/10 bg-white/[0.04] p-4"
+              className="rounded-xl border border-white/10 bg-white/[0.04] p-4"
             >
               <p className="text-sm text-slate-400">{label}</p>
               <p className={`mt-2 break-words text-2xl font-bold ${color}`}>
@@ -654,13 +765,16 @@ export default function Income() {
               </p>
             </div>
           ))}
-        </section>
+        </motion.section>
 
-        <section className="mb-6 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+        <motion.section
+          {...motionProps(0.1)}
+          className="mb-6 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]"
+        >
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <div className="flex items-center gap-2">
               <FiTrendingUp className="text-emerald-300" />
-              <h2 className="text-xl font-bold">Beautiful Analytics Cards</h2>
+              <h2 className="text-xl font-bold">Income by Source</h2>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
               {incomeSources.slice(0, 9).map((source) => {
@@ -673,7 +787,7 @@ export default function Income() {
                     onClick={() =>
                       setFilters((prev) => ({ ...prev, source }))
                     }
-                    className="rounded-lg border border-white/10 bg-slate-800/70 p-4 text-left hover:border-emerald-300/60"
+                    className="rounded-xl border border-white/10 bg-slate-800/70 p-4 text-left transition-colors hover:border-emerald-300/60"
                   >
                     <p className="text-sm text-slate-400">{source}</p>
                     <p className="mt-2 break-words text-lg font-semibold">
@@ -685,7 +799,7 @@ export default function Income() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <h2 className="text-xl font-bold">Income Insights</h2>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {[
@@ -697,7 +811,7 @@ export default function Income() {
               ].map(([label, value]) => (
                 <div
                   key={label}
-                  className="rounded-lg bg-slate-800/80 p-4"
+                  className="rounded-xl bg-slate-800/80 p-4"
                 >
                   <p className="text-sm text-slate-400">{label}</p>
                   <p className="mt-2 break-words text-xl font-bold">
@@ -707,10 +821,10 @@ export default function Income() {
               ))}
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="mb-6 grid gap-6 xl:grid-cols-2">
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+        <motion.section {...motionProps(0.15)} className="mb-6 grid gap-6 xl:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <h2 className="text-xl font-bold">Salary Calculator</h2>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {[
@@ -723,66 +837,60 @@ export default function Income() {
                 ["Insurance", "insurance"],
                 ["Income Tax", "incomeTax"],
               ].map(([label, key]) => (
-                <label key={key} className="text-sm text-slate-300">
-                  {label}
-                  <input
-                    type="number"
-                    value={formData[key]}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        [key]: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800 p-3 text-white"
-                  />
-                </label>
+                <FormField
+                  key={key}
+                  label={label}
+                  type="number"
+                  value={formData[key]}
+                  onChange={(event) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      [key]: event.target.value,
+                    }))
+                  }
+                />
               ))}
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg bg-emerald-500/10 p-4">
+              <div className="rounded-xl bg-emerald-500/10 p-4">
                 <p className="text-sm text-emerald-200">Gross Salary</p>
                 <p className="break-words text-2xl font-bold">{money(salaryTotals.gross)}</p>
               </div>
-              <div className="rounded-lg bg-rose-500/10 p-4">
+              <div className="rounded-xl bg-rose-500/10 p-4">
                 <p className="text-sm text-rose-200">Deductions</p>
                 <p className="break-words text-2xl font-bold">{money(salaryTotals.deductions)}</p>
               </div>
-              <div className="rounded-lg bg-cyan-500/10 p-4">
+              <div className="rounded-xl bg-cyan-500/10 p-4">
                 <p className="text-sm text-cyan-200">Net Salary</p>
                 <p className="break-words text-2xl font-bold">{money(salaryTotals.net)}</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <h2 className="text-xl font-bold">Account Integration</h2>
-            <div className="mt-4 rounded-lg bg-slate-800/80 p-4">
+            <div className="mt-4 rounded-xl bg-slate-800/80 p-4">
               <p className="text-sm text-slate-400">Salary</p>
               <p className="mt-1 break-words text-3xl font-bold text-emerald-300">
                 {money(depositAmount)}
               </p>
               <div className="my-4 h-px bg-white/10" />
-              <label className="text-sm text-slate-300">
-                Deposit To
-                <select
-                  value={formData.accountId}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      accountId: event.target.value,
-                    }))
-                  }
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 p-3"
-                >
-                  <option value="">Select Account</option>
-                  {accounts.map((account) => (
-                    <option key={account._id} value={account._id}>
-                      {account.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <FormField
+                label="Deposit To"
+                type="select"
+                value={formData.accountId}
+                onChange={(event) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    accountId: event.target.value,
+                  }))
+                }
+                placeholder="Select Account"
+                options={accounts.map((account) => ({
+                  value: account._id,
+                  label: account.name,
+                }))}
+              />
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-sm text-slate-400">Current Balance</p>
@@ -800,10 +908,10 @@ export default function Income() {
               <p className="mt-4 text-sm text-slate-400">Live preview</p>
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="mb-6 grid gap-6 xl:grid-cols-3">
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+        <motion.section {...motionProps(0.2)} className="mb-6 grid gap-6 xl:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <h2 className="text-xl font-bold">Monthly Income Timeline</h2>
             <p className="mt-1 text-sm text-slate-400">
               {monthNames[new Date().getMonth()]}
@@ -822,9 +930,11 @@ export default function Income() {
                 </div>
                 ))
               ) : (
-                <p className="rounded-lg bg-slate-800 p-3 text-sm text-slate-400">
-                  Add income to build the monthly timeline.
-                </p>
+                <EmptyState
+                  icon={FiCalendar}
+                  title="No income this month yet"
+                  message="Add income to build the monthly timeline."
+                />
               )}
               <div className="border-t border-white/10 pt-3 font-bold">
                 Total {money(analytics.monthlyIncome)}
@@ -832,14 +942,14 @@ export default function Income() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <h2 className="text-xl font-bold">Income Calendar</h2>
             <div className="mt-4 space-y-3">
               {upcomingIncomeItems.length > 0 ? (
                 upcomingIncomeItems.map((item) => (
                   <div
                     key={item.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-800 p-3"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-800 p-3"
                   >
                     <span>{item.source}</span>
                     <span className="text-slate-300">
@@ -848,14 +958,16 @@ export default function Income() {
                   </div>
                 ))
               ) : (
-                <p className="rounded-lg bg-slate-800 p-3 text-sm text-slate-400">
-                  Recurring income dates will appear here.
-                </p>
+                <EmptyState
+                  icon={FiClock}
+                  title="No upcoming dates yet"
+                  message="Recurring income dates will appear here."
+                />
               )}
             </div>
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <h2 className="text-xl font-bold">Annual Projection</h2>
             <div className="mt-4 space-y-3">
               {[
@@ -875,16 +987,19 @@ export default function Income() {
               ))}
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="mb-6 rounded-lg border border-white/10 bg-slate-900 p-5">
+        <motion.section
+          {...motionProps(0.25)}
+          className="mb-6 rounded-2xl border border-white/10 bg-slate-900 p-5"
+        >
           <h2 className="text-xl font-bold">Income Sources</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {recentIncomeSources.length > 0 ? (
               recentIncomeSources.map((income) => (
               <div
                 key={income._id}
-                className="rounded-lg border border-white/10 bg-slate-800/80 p-4"
+                className="rounded-xl border border-white/10 bg-slate-800/80 p-4 transition-colors hover:border-emerald-300/40"
               >
                 <p className="text-lg font-semibold">{income.source}</p>
                 <p className="mt-1 break-words text-2xl font-bold text-emerald-300">
@@ -904,15 +1019,24 @@ export default function Income() {
               </div>
               ))
             ) : (
-              <div className="rounded-lg border border-dashed border-white/15 bg-slate-800/50 p-5 text-sm text-slate-400 md:col-span-3">
-                Add your first income source to see dynamic source cards here.
+              <div className="md:col-span-3">
+                <EmptyState
+                  icon={FiInbox}
+                  title="No income sources yet"
+                  message="Add your first income source to see dynamic source cards here."
+                  action={
+                    <Button icon={FiPlus} onClick={openAddModal}>
+                      Add Income
+                    </Button>
+                  }
+                />
               </div>
             )}
           </div>
-        </section>
+        </motion.section>
 
-        <section className="mb-6 grid gap-6 xl:grid-cols-2">
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+        <motion.section {...motionProps(0.3)} className="mb-6 grid gap-6 xl:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <h2 className="text-xl font-bold">Income Growth</h2>
             <div className="mt-4 h-64 sm:h-72">
               {hasIncomeData ? (
@@ -938,14 +1062,17 @@ export default function Income() {
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex h-full items-center justify-center rounded-lg bg-slate-800/60 p-4 text-center text-sm text-slate-400">
-                  Add dated income records to generate the growth chart.
-                </div>
+                <EmptyState
+                  className="h-full"
+                  icon={FiTrendingUp}
+                  title="No growth data yet"
+                  message="Add dated income records to generate the growth chart."
+                />
               )}
             </div>
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-slate-900 p-5">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
             <h2 className="text-xl font-bold">Income Sources Chart</h2>
             <div className="mt-4 grid min-h-64 gap-4 md:h-72 md:grid-cols-2">
               {hasChartData ? (
@@ -981,27 +1108,34 @@ export default function Income() {
                   </ResponsiveContainer>
                 </>
               ) : (
-                <div className="flex min-h-64 items-center justify-center rounded-lg bg-slate-800/60 p-4 text-center text-sm text-slate-400 md:col-span-2">
-                  Add income sources to compare salary, business, freelancing,
-                  rental, and interest income.
+                <div className="md:col-span-2">
+                  <EmptyState
+                    icon={FiPieChart}
+                    title="No income sources to chart yet"
+                    message="Add income sources to compare salary, business, freelancing, rental, and interest income."
+                  />
                 </div>
               )}
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="mb-6 rounded-lg border border-white/10 bg-slate-900 p-5">
+        <motion.section
+          {...motionProps(0.35)}
+          className="mb-6 rounded-2xl border border-white/10 bg-slate-900 p-5"
+        >
           <div className="mb-4 flex items-center gap-2">
             <FiFilter className="text-cyan-300" />
             <h2 className="text-xl font-bold">Filters</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
             <select
+              aria-label="Filter by month"
               value={filters.month}
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, month: event.target.value }))
               }
-              className="rounded-lg border border-white/10 bg-slate-800 p-3"
+              className="rounded-xl border border-white/10 bg-slate-800 p-3"
             >
               <option value="all">Month</option>
               {monthNames.map((month, index) => (
@@ -1011,11 +1145,12 @@ export default function Income() {
               ))}
             </select>
             <select
+              aria-label="Filter by year"
               value={filters.year}
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, year: event.target.value }))
               }
-              className="rounded-lg border border-white/10 bg-slate-800 p-3"
+              className="rounded-xl border border-white/10 bg-slate-800 p-3"
             >
               <option value="all">Year</option>
               {[2024, 2025, 2026, 2027].map((year) => (
@@ -1023,11 +1158,12 @@ export default function Income() {
               ))}
             </select>
             <select
+              aria-label="Filter by account"
               value={filters.account}
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, account: event.target.value }))
               }
-              className="rounded-lg border border-white/10 bg-slate-800 p-3"
+              className="rounded-xl border border-white/10 bg-slate-800 p-3"
             >
               <option value="all">Account</option>
               {accounts.map((account) => (
@@ -1037,11 +1173,12 @@ export default function Income() {
               ))}
             </select>
             <select
+              aria-label="Filter by income source"
               value={filters.source}
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, source: event.target.value }))
               }
-              className="rounded-lg border border-white/10 bg-slate-800 p-3"
+              className="rounded-xl border border-white/10 bg-slate-800 p-3"
             >
               <option value="all">Income Source</option>
               {incomeSources.map((source) => (
@@ -1049,6 +1186,7 @@ export default function Income() {
               ))}
             </select>
             <select
+              aria-label="Filter by payment mode"
               value={filters.paymentMode}
               onChange={(event) =>
                 setFilters((prev) => ({
@@ -1056,7 +1194,7 @@ export default function Income() {
                   paymentMode: event.target.value,
                 }))
               }
-              className="rounded-lg border border-white/10 bg-slate-800 p-3"
+              className="rounded-xl border border-white/10 bg-slate-800 p-3"
             >
               <option value="all">Payment Mode</option>
               {paymentModes.map((mode) => (
@@ -1064,6 +1202,7 @@ export default function Income() {
               ))}
             </select>
             <select
+              aria-label="Filter by recurring status"
               value={filters.recurring}
               onChange={(event) =>
                 setFilters((prev) => ({
@@ -1071,7 +1210,7 @@ export default function Income() {
                   recurring: event.target.value,
                 }))
               }
-              className="rounded-lg border border-white/10 bg-slate-800 p-3"
+              className="rounded-xl border border-white/10 bg-slate-800 p-3"
             >
               <option value="all">Recurring</option>
               <option value="true">Recurring</option>
@@ -1080,6 +1219,7 @@ export default function Income() {
             <div className="relative">
               <FiSearch className="absolute left-3 top-3.5 text-slate-400" />
               <input
+                aria-label="Search income records"
                 value={filters.search}
                 onChange={(event) =>
                   setFilters((prev) => ({
@@ -1088,23 +1228,26 @@ export default function Income() {
                   }))
                 }
                 placeholder="Search"
-                className="w-full rounded-lg border border-white/10 bg-slate-800 py-3 pl-10 pr-3"
+                className="w-full rounded-xl border border-white/10 bg-slate-800 py-3 pl-10 pr-3"
               />
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="overflow-hidden rounded-lg border border-white/10 bg-slate-900">
+        <motion.section
+          {...motionProps(0.4)}
+          className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900"
+        >
           <div className="flex items-center justify-between border-b border-white/10 p-5">
             <h2 className="text-xl font-bold">Income Table</h2>
             <span className="text-sm text-slate-400">
               {filteredIncomes.length} records
             </span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="max-h-[32rem] overflow-auto">
             <table className="w-full min-w-[1100px]">
               <thead>
-                <tr className="bg-slate-800/70 text-left text-sm text-slate-300">
+                <tr className="sticky top-0 z-10 bg-slate-800/95 text-left text-sm text-slate-300 backdrop-blur">
                   <th className="p-4">Date</th>
                   <th className="p-4">Account</th>
                   <th className="p-4">Source</th>
@@ -1147,13 +1290,15 @@ export default function Income() {
                             onClick={() => openEditModal(income)}
                             className="text-cyan-300 hover:text-cyan-200"
                             title="Edit"
+                            aria-label={`Edit ${income.source} income entry`}
                           >
                             <FiEdit2 />
                           </button>
                           <button
-                            onClick={() => handleDeleteIncome(income._id)}
+                            onClick={() => setDeleteTarget(income)}
                             className="text-rose-300 hover:text-rose-200"
                             title="Delete"
+                            aria-label={`Delete ${income.source} income entry`}
                           >
                             <FiTrash2 />
                           </button>
@@ -1163,330 +1308,284 @@ export default function Income() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="10" className="p-10 text-center text-slate-400">
-                      No Income Found
+                    <td colSpan="10" className="p-6">
+                      <EmptyState
+                        icon={FiSearch}
+                        title="No income found"
+                        message="Try adjusting your filters, or add a new income entry."
+                      />
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </section>
+        </motion.section>
 
-        {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-            <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-5">
-              <div className="mb-5 flex items-center justify-between gap-4">
-                <h2 className="text-2xl font-bold">
-                  {editingIncome ? "Edit Income" : "Add Income"}
-                </h2>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="rounded-lg bg-slate-800 px-3 py-2"
-                >
-                  Close
-                </button>
+        <Modal
+          isOpen={showModal}
+          onClose={closeModal}
+          title={editingIncome ? "Edit Income" : "Add Income"}
+          maxWidth="max-w-5xl"
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <FormField
+              label="Source"
+              type="select"
+              value={formData.source}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  source: event.target.value,
+                  category: event.target.value,
+                }))
+              }
+              options={incomeSources}
+            />
+
+            <FormField
+              label="Category"
+              type="select"
+              value={formData.category}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  category: event.target.value,
+                }))
+              }
+              options={incomeSources}
+            />
+
+            <FormField
+              label="Amount"
+              type="number"
+              value={formData.amount}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  amount: event.target.value,
+                }))
+              }
+              disabled={formData.source === "Salary"}
+            />
+
+            <FormField
+              label="Account"
+              type="select"
+              value={formData.accountId}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  accountId: event.target.value,
+                }))
+              }
+              placeholder="Select Account"
+              options={accounts.map((account) => ({
+                value: account._id,
+                label: account.name,
+              }))}
+            />
+
+            <FormField
+              label="Payment Mode"
+              type="select"
+              value={formData.paymentMode}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  paymentMode: event.target.value,
+                }))
+              }
+              options={paymentModes}
+            />
+
+            <FormField
+              label="Employer"
+              value={formData.employer}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  employer: event.target.value,
+                }))
+              }
+            />
+
+            <FormField
+              label="Date"
+              type="date"
+              value={formData.date}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  date: event.target.value,
+                }))
+              }
+            />
+
+            <FormField
+              label="Time"
+              type="time"
+              value={formData.time}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  time: event.target.value,
+                }))
+              }
+            />
+
+            <label className="flex items-center gap-3 rounded-xl bg-slate-800 p-3 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={formData.isRecurring}
+                onChange={(event) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    isRecurring: event.target.checked,
+                  }))
+                }
+              />
+              Recurring Income
+            </label>
+
+            {formData.isRecurring && (
+              <FormField
+                label="Recurring Type"
+                type="select"
+                value={formData.recurringType}
+                onChange={(event) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    recurringType: event.target.value,
+                  }))
+                }
+                options={recurringTypes}
+              />
+            )}
+
+            <FormField
+              label="Attachments"
+              value={formData.attachments}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  attachments: event.target.value,
+                }))
+              }
+              placeholder="Comma separated links"
+              containerClassName="md:col-span-2"
+            />
+
+            <FormField
+              label="Note"
+              value={formData.note}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  note: event.target.value,
+                }))
+              }
+              containerClassName="md:col-span-3"
+            />
+          </div>
+
+          {formData.source === "Salary" && (
+            <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950 p-4">
+              <div className="mb-4 flex items-center gap-2">
+                <FiCalendar className="text-emerald-300" />
+                <h3 className="text-lg font-bold">Salary Breakdown</h3>
               </div>
-
-              <div className="grid gap-3 md:grid-cols-3">
-                <label className="text-sm text-slate-300">
-                  Source
-                  <select
-                    value={formData.source}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        source: event.target.value,
-                        category: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  >
-                    {incomeSources.map((source) => (
-                      <option key={source}>{source}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="text-sm text-slate-300">
-                  Category
-                  <select
-                    value={formData.category}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        category: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  >
-                    {incomeSources.map((source) => (
-                      <option key={source}>{source}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="text-sm text-slate-300">
-                  Amount
-                  <input
+              <div className="grid gap-3 md:grid-cols-4">
+                {[
+                  ["Gross Salary", "grossSalary"],
+                  ["Basic", "basic"],
+                  ["HRA", "hra"],
+                  ["Special Allowance", "specialAllowance"],
+                  ["Variable Pay", "variablePay"],
+                  ["Bonus", "bonus"],
+                  ["PF", "pf"],
+                  ["Professional Tax", "professionalTax"],
+                  ["Income Tax", "incomeTax"],
+                  ["Insurance", "insurance"],
+                  ["TDS", "tds"],
+                  ["Net Salary", "netSalary"],
+                ].map(([label, key]) => (
+                  <FormField
+                    key={key}
+                    label={label}
                     type="number"
-                    value={formData.amount}
+                    value={key === "netSalary" ? salaryTotals.net : formData[key]}
+                    disabled={key === "netSalary"}
                     onChange={(event) =>
                       setFormData((prev) => ({
                         ...prev,
-                        amount: event.target.value,
-                      }))
-                    }
-                    disabled={formData.source === "Salary"}
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3 disabled:opacity-60"
-                  />
-                </label>
-
-                <label className="text-sm text-slate-300">
-                  Account
-                  <select
-                    value={formData.accountId}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        accountId: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  >
-                    <option value="">Select Account</option>
-                    {accounts.map((account) => (
-                      <option key={account._id} value={account._id}>
-                        {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="text-sm text-slate-300">
-                  Payment Mode
-                  <select
-                    value={formData.paymentMode}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        paymentMode: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  >
-                    {paymentModes.map((mode) => (
-                      <option key={mode}>{mode}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="text-sm text-slate-300">
-                  Employer
-                  <input
-                    value={formData.employer}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        employer: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  />
-                </label>
-
-                <label className="text-sm text-slate-300">
-                  Date
-                  <input
-                    type="date"
-                    value={formData.date}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        date: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  />
-                </label>
-
-                <label className="text-sm text-slate-300">
-                  Time
-                  <input
-                    type="time"
-                    value={formData.time}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        time: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  />
-                </label>
-
-                <label className="flex items-center gap-3 rounded-lg bg-slate-800 p-3 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={formData.isRecurring}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        isRecurring: event.target.checked,
+                        [key]: event.target.value,
                       }))
                     }
                   />
-                  Recurring Income
-                </label>
-
-                {formData.isRecurring && (
-                  <label className="text-sm text-slate-300">
-                    Recurring Type
-                    <select
-                      value={formData.recurringType}
-                      onChange={(event) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          recurringType: event.target.value,
-                        }))
-                      }
-                      className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                    >
-                      {recurringTypes.map((type) => (
-                        <option key={type}>{type}</option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-
-                <label className="text-sm text-slate-300 md:col-span-2">
-                  Attachments
-                  <input
-                    value={formData.attachments}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        attachments: event.target.value,
-                      }))
-                    }
-                    placeholder="Comma separated links"
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  />
-                </label>
-
-                <label className="text-sm text-slate-300 md:col-span-3">
-                  Note
-                  <input
-                    value={formData.note}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        note: event.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  />
-                </label>
-              </div>
-
-              {formData.source === "Salary" && (
-                <div className="mt-5 rounded-lg border border-white/10 bg-slate-950 p-4">
-                  <div className="mb-4 flex items-center gap-2">
-                    <FiCalendar className="text-emerald-300" />
-                    <h3 className="text-lg font-bold">Salary Breakdown</h3>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-4">
-                    {[
-                      ["Gross Salary", "grossSalary"],
-                      ["Basic", "basic"],
-                      ["HRA", "hra"],
-                      ["Special Allowance", "specialAllowance"],
-                      ["Variable Pay", "variablePay"],
-                      ["Bonus", "bonus"],
-                      ["PF", "pf"],
-                      ["Professional Tax", "professionalTax"],
-                      ["Income Tax", "incomeTax"],
-                      ["Insurance", "insurance"],
-                      ["TDS", "tds"],
-                      ["Net Salary", "netSalary"],
-                    ].map(([label, key]) => (
-                      <label key={key} className="text-sm text-slate-300">
-                        {label}
-                        <input
-                          type="number"
-                          value={key === "netSalary" ? salaryTotals.net : formData[key]}
-                          disabled={key === "netSalary"}
-                          onChange={(event) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              [key]: event.target.value,
-                            }))
-                          }
-                          className="mt-1 w-full rounded-lg bg-slate-800 p-3 disabled:opacity-70"
-                        />
-                      </label>
-                    ))}
-                    <label className="text-sm text-slate-300">
-                      Salary Month
-                      <select
-                        value={formData.salaryMonth}
-                        onChange={(event) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            salaryMonth: event.target.value,
-                          }))
-                        }
-                        className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                      >
-                        {monthNames.map((month, index) => (
-                          <option key={month} value={index + 1}>
-                            {month}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="text-sm text-slate-300">
-                      Salary Year
-                      <input
-                        type="number"
-                        value={formData.salaryYear}
-                        onChange={(event) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            salaryYear: event.target.value,
-                          }))
-                        }
-                        className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                      />
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-5 rounded-lg bg-slate-800 p-4">
-                <p className="text-sm text-slate-400">Balance After Credit</p>
-                <p className="mt-1 text-2xl font-bold text-emerald-300">
-                  {money(balanceAfterCredit)}
-                </p>
-              </div>
-
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="rounded-lg bg-slate-700 px-4 py-2"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveIncome}
-                  className="rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-slate-950"
-                >
-                  Save
-                </button>
+                ))}
+                <FormField
+                  label="Salary Month"
+                  type="select"
+                  value={formData.salaryMonth}
+                  onChange={(event) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      salaryMonth: event.target.value,
+                    }))
+                  }
+                  options={monthNames.map((month, index) => ({
+                    value: index + 1,
+                    label: month,
+                  }))}
+                />
+                <FormField
+                  label="Salary Year"
+                  type="number"
+                  value={formData.salaryYear}
+                  onChange={(event) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      salaryYear: event.target.value,
+                    }))
+                  }
+                />
               </div>
             </div>
+          )}
+
+          <div className="mt-5 rounded-xl bg-slate-800 p-4">
+            <p className="text-sm text-slate-400">Balance After Credit</p>
+            <p className="mt-1 text-2xl font-bold text-emerald-300">
+              {money(balanceAfterCredit)}
+            </p>
           </div>
-        )}
+
+          <div className="mt-6 flex justify-end gap-3">
+            <Button variant="secondary" onClick={closeModal} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveIncome} loading={saving}>
+              Save
+            </Button>
+          </div>
+        </Modal>
+
+        <ConfirmDialog
+          isOpen={!!deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteIncome}
+          title="Delete income entry?"
+          message={
+            deleteTarget
+              ? `This will permanently delete this ${deleteTarget.source} income entry of ${money(
+                  getIncomeAmount(deleteTarget),
+                )}. This action cannot be undone.`
+              : ""
+          }
+          confirmLabel="Delete"
+          loading={deleting}
+        />
       </div>
     </DashboardLayout>
   );

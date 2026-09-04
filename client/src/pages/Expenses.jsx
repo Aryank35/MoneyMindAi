@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { FiPlus, FiSearch, FiFilter, FiTrash2 } from "react-icons/fi";
+import { motion } from "framer-motion";
+import { FiPlus, FiSearch, FiFilter, FiTrash2, FiTag } from "react-icons/fi";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
 import { getAccountsByUser } from "../services/accountService";
@@ -13,8 +14,14 @@ import {
 import { getUserId } from "../utils/auth";
 
 import { getBudgetByUser, updateBudget } from "../services/budgetService";
+import { useToast } from "../components/common/Toast";
+import { PageLoader } from "../components/common/Loader";
+import EmptyState from "../components/common/EmptyState";
+import ConfirmDialog from "../components/common/ConfirmDialog";
 
 export default function Expenses() {
+  const toast = useToast();
+
   const [expenses, setExpenses] = useState([]);
 
   const [formData, setFormData] = useState({
@@ -51,6 +58,10 @@ export default function Expenses() {
 
   const [accounts, setAccounts] = useState([]);
 
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const [deleting, setDeleting] = useState(false);
+
   const fetchExpenses = async () => {
     try {
       const response = await getExpensesByUser(getUserId());
@@ -82,6 +93,24 @@ export default function Expenses() {
     }
   };
 
+  const fetchBudgetCategories = async () => {
+    try {
+      const response = await getBudgetByUser(getUserId());
+
+      const currentBudget = response.data?.[0];
+
+      setBudget(currentBudget);
+
+      const categories = currentBudget?.categories || [];
+
+      setBudgetCategories(categories);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       await Promise.all([
@@ -103,24 +132,24 @@ export default function Expenses() {
       const amount = Number(formData.amount);
 
       if (amount <= 0) {
-        alert("Amount must be greater than 0");
+        toast.error("Amount must be greater than 0");
 
         return;
       }
 
       if (!budget) {
-        alert("Please create a budget first");
+        toast.error("Please create a budget first");
 
         return;
       }
 
       if (!formData.account) {
-        alert("Please select account");
+        toast.error("Please select account");
         return;
       }
 
       if (selectedAccountData && amount > Number(selectedAccountData.balance)) {
-        alert("Insufficient balance in selected account");
+        toast.error("Insufficient balance in selected account");
 
         return;
       }
@@ -150,36 +179,38 @@ export default function Expenses() {
       });
 
       await Promise.all([fetchExpenses(), fetchAccounts()]);
+
+      toast.success("Expense added");
     } catch (error) {
       console.error(error);
+
+      toast.error(error?.response?.data?.message || "Failed to add expense");
     }
   };
 
-  const handleDeleteExpense = async (id) => {
+  const requestDeleteExpense = (expense) => {
+    setDeleteTarget(expense);
+  };
+
+  const confirmDeleteExpense = async () => {
+    if (!deleteTarget) return;
+
+    setDeleting(true);
+
     try {
-      await deleteExpense(id);
+      await deleteExpense(deleteTarget._id);
 
       await Promise.all([fetchExpenses(), fetchAccounts()]);
+
+      toast.success("Expense deleted");
+
+      setDeleteTarget(null);
     } catch (error) {
       console.error(error);
-    }
-  };
 
-  const fetchBudgetCategories = async () => {
-    try {
-      const response = await getBudgetByUser(getUserId());
-
-      const currentBudget = response.data?.[0];
-
-      setBudget(currentBudget);
-
-      const categories = currentBudget?.categories || [];
-
-      setBudgetCategories(categories);
-    } catch (error) {
-      console.error(error);
+      toast.error("Failed to delete expense");
     } finally {
-      setLoading(false);
+      setDeleting(false);
     }
   };
 
@@ -214,9 +245,7 @@ export default function Expenses() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-[70vh]">
-          <h2 className="text-2xl text-slate-400">Loading Expenses...</h2>
-        </div>
+        <PageLoader label="Loading expenses..." />
       </DashboardLayout>
     );
   }
@@ -286,33 +315,57 @@ export default function Expenses() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-5">
-          <p className="text-slate-400">Today</p>
-          <h2 className="text-2xl font-bold">
-            ₹{todayExpense.toLocaleString()}
-          </h2>
-        </div>
-
-        <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-5">
-          <p className="text-slate-400">This Month</p>
-          <h2 className="text-2xl font-bold">
-            ₹{monthExpense.toLocaleString()}
-          </h2>
-        </div>
-
-        <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-5">
-          <p className="text-slate-400">Budget Left</p>
-          <h2 className="text-2xl font-bold">
-            ₹{remainingBudget.toLocaleString()}
-          </h2>
-        </div>
-
-        <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-5">
-          <p className="text-slate-400">Transactions</p>
-          <h2 className="text-2xl font-bold">{expenses.length}</h2>
-        </div>
-      </div>
+      <motion.div
+        className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"
+        initial="hidden"
+        animate="visible"
+        variants={{
+          hidden: {},
+          visible: { transition: { staggerChildren: 0.05 } },
+        }}
+      >
+        {[
+          {
+            key: "today",
+            label: "Today",
+            value: todayExpense,
+            classes: "bg-indigo-500/10 border-indigo-500/20",
+          },
+          {
+            key: "month",
+            label: "This Month",
+            value: monthExpense,
+            classes: "bg-purple-500/10 border-purple-500/20",
+          },
+          {
+            key: "left",
+            label: "Budget Left",
+            value: remainingBudget,
+            classes: "bg-green-500/10 border-green-500/20",
+          },
+          {
+            key: "transactions",
+            label: "Transactions",
+            value: expenses.length,
+            classes: "bg-orange-500/10 border-orange-500/20",
+            raw: true,
+          },
+        ].map((card) => (
+          <motion.div
+            key={card.key}
+            variants={{
+              hidden: { opacity: 0, y: 10 },
+              visible: { opacity: 1, y: 0 },
+            }}
+            className={`border rounded-2xl p-5 ${card.classes}`}
+          >
+            <p className="text-slate-400">{card.label}</p>
+            <h2 className="text-2xl font-bold">
+              {card.raw ? card.value : `₹${card.value.toLocaleString()}`}
+            </h2>
+          </motion.div>
+        ))}
+      </motion.div>
 
       {/* Add Expense */}
       {!hasBudget && (
@@ -324,26 +377,38 @@ export default function Expenses() {
         <h2 className="text-xl font-semibold mb-5">Add Expense</h2>
 
         <div className="grid md:grid-cols-3 gap-4">
-          <select
-            value={formData.account}
-            onChange={(e) => {
-              setFormData({
-                ...formData,
-                account: e.target.value,
-              });
-            }}
-            className="bg-slate-800 rounded-xl p-3 border border-slate-700"
-          >
-            <option value="">Select Account</option>
-            {accounts.map((account) => (
-              <option key={account._id} value={account._id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
+          <div>
+            <label htmlFor="expense-account" className="block mb-2 text-slate-400 text-sm">
+              Account
+            </label>
+
+            <select
+              id="expense-account"
+              value={formData.account}
+              onChange={(e) => {
+                setFormData({
+                  ...formData,
+                  account: e.target.value,
+                });
+              }}
+              className="w-full bg-slate-800 rounded-xl p-3 border border-slate-700"
+            >
+              <option value="">Select Account</option>
+              {accounts.map((account) => (
+                <option key={account._id} value={account._id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="space-y-2">
+            <label htmlFor="expense-category" className="block mb-2 text-slate-400 text-sm">
+              Category
+            </label>
+
             <select
+              id="expense-category"
               value={formData.category}
               onChange={(e) => {
                 if (e.target.value === "__new__") {
@@ -374,7 +439,12 @@ export default function Expenses() {
 
             {showNewCategoryInput && (
               <div className="flex gap-2">
+                <label htmlFor="expense-new-category" className="sr-only">
+                  New category name
+                </label>
+
                 <input
+                  id="expense-new-category"
                   type="text"
                   placeholder="New Category"
                   value={newCategory}
@@ -400,7 +470,7 @@ export default function Expenses() {
                       );
 
                       if (exists) {
-                        alert("Category already exists");
+                        toast.error("Category already exists");
 
                         return;
                       }
@@ -436,8 +506,12 @@ export default function Expenses() {
                       setNewCategory("");
 
                       setShowNewCategoryInput(false);
+
+                      toast.success("Category added");
                     } catch (error) {
                       console.error(error);
+
+                      toast.error("Failed to add category");
                     }
                   }}
                   className="px-4 rounded-xl bg-indigo-600"
@@ -448,37 +522,52 @@ export default function Expenses() {
             )}
           </div>
 
-          <input
-            type="number"
-            placeholder="Amount"
-            value={formData.amount}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                amount: e.target.value,
-              })
-            }
-            className="bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500"
-          />
+          <div>
+            <label htmlFor="expense-amount" className="block mb-2 text-slate-400 text-sm">
+              Amount
+            </label>
 
-          <input
-            type="text"
-            placeholder="Note"
-            value={formData.note}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                note: e.target.value,
-              })
-            }
-            className="bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500"
-          />
+            <input
+              id="expense-amount"
+              type="number"
+              placeholder="Amount"
+              value={formData.amount}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  amount: e.target.value,
+                })
+              }
+              className="w-full bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="expense-note" className="block mb-2 text-slate-400 text-sm">
+              Note
+            </label>
+
+            <input
+              id="expense-note"
+              type="text"
+              placeholder="Note"
+              value={formData.note}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  note: e.target.value,
+                })
+              }
+              className="w-full bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500"
+            />
+          </div>
         </div>
         <div className="grid md:grid-cols-2 gap-4 mt-4">
           <div>
-            <label className="block mb-2 text-slate-400">Expense Date</label>
+            <label htmlFor="expense-date" className="block mb-2 text-slate-400">Expense Date</label>
 
             <input
+              id="expense-date"
               type="date"
               value={formData.date}
               onChange={(e) =>
@@ -492,9 +581,10 @@ export default function Expenses() {
           </div>
 
           <div>
-            <label className="block mb-2 text-slate-400">Expense Time</label>
+            <label htmlFor="expense-time" className="block mb-2 text-slate-400">Expense Time</label>
 
             <input
+              id="expense-time"
               type="time"
               value={formData.time}
               onChange={(e) =>
@@ -507,17 +597,21 @@ export default function Expenses() {
             />
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-          {accounts.map((account) => (
-            <button
-              key={account._id}
-              onClick={() =>
-                setFormData({
-                  ...formData,
-                  account: account._id,
-                })
-              }
-              className={`
+        {accounts.length > 0 ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+            {accounts.map((account, index) => (
+              <motion.button
+                key={account._id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, delay: index * 0.03 }}
+                onClick={() =>
+                  setFormData({
+                    ...formData,
+                    account: account._id,
+                  })
+                }
+                className={`
         p-4 rounded-2xl
         border transition-all
         ${
@@ -526,25 +620,34 @@ export default function Expenses() {
             : "border-slate-700 bg-slate-800"
         }
       `}
-            >
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
-                style={{
-                  backgroundColor: account.color + "30",
-                }}
               >
-                {account.icon || "🏦"}
-              </div>
-              <h3 className="font-semibold mt-2">{account.name}</h3>
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                  style={{
+                    backgroundColor: account.color + "30",
+                  }}
+                >
+                  {account.icon || "🏦"}
+                </div>
+                <h3 className="font-semibold mt-2">{account.name}</h3>
 
-              <p className="text-xs text-slate-400">{account.type}</p>
+                <p className="text-xs text-slate-400">{account.type}</p>
 
-              <p className="text-green-400 mt-2">
-                ₹{Number(account.balance || 0).toLocaleString()}
-              </p>
-            </button>
-          ))}
-        </div>
+                <p className="text-green-400 mt-2">
+                  ₹{Number(account.balance || 0).toLocaleString()}
+                </p>
+              </motion.button>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3">
+            <EmptyState
+              icon={FiTag}
+              title="No accounts found"
+              message="Add an account first so you can log an expense against it."
+            />
+          </div>
+        )}
 
         <div className="mt-4 p-4 rounded-xl bg-slate-800 border border-slate-700">
           <div
@@ -598,9 +701,14 @@ export default function Expenses() {
 
       <div className="flex flex-col md:flex-row gap-4 mb-8">
         <div className="flex-1 relative">
+          <label htmlFor="expense-search" className="sr-only">
+            Search expenses
+          </label>
+
           <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
 
           <input
+            id="expense-search"
             type="text"
             placeholder="Search expenses..."
             value={searchTerm}
@@ -611,6 +719,8 @@ export default function Expenses() {
 
         <button
           onClick={() => setShowFilters(!showFilters)}
+          aria-label={showFilters ? "Hide filters" : "Show filters"}
+          aria-expanded={showFilters}
           className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition"
         >
           <FiFilter />
@@ -619,57 +729,98 @@ export default function Expenses() {
       </div>
 
       {showFilters && (
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6">
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18 }}
+          className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6"
+        >
           <div className="grid md:grid-cols-4 gap-4">
-            <select
-              value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
-              className="bg-slate-800 p-3 rounded-xl"
-            >
-              <option value="all">All Accounts</option>
+            <div>
+              <label htmlFor="filter-account" className="block mb-1 text-slate-400 text-sm">
+                Account
+              </label>
 
-              {accounts.map((account) => (
-                <option key={account._id} value={account._id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-slate-800 p-3 rounded-xl"
-            >
-              <option value="">All Categories</option>
+              <select
+                id="filter-account"
+                value={selectedAccount}
+                onChange={(e) => setSelectedAccount(e.target.value)}
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              >
+                <option value="all">All Accounts</option>
 
-              {budgetCategories.map((category) => (
-                <option key={category.name} value={category.name}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+                {accounts.map((account) => (
+                  <option key={account._id} value={account._id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-slate-800 p-3 rounded-xl"
-            />
+            <div>
+              <label htmlFor="filter-category" className="block mb-1 text-slate-400 text-sm">
+                Category
+              </label>
 
-            <input
-              type="number"
-              placeholder="Min Amount"
-              value={minAmount}
-              onChange={(e) => setMinAmount(e.target.value)}
-              className="bg-slate-800 p-3 rounded-xl"
-            />
+              <select
+                id="filter-category"
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              >
+                <option value="">All Categories</option>
 
-            <input
-              type="number"
-              placeholder="Max Amount"
-              value={maxAmount}
-              onChange={(e) => setMaxAmount(e.target.value)}
-              className="bg-slate-800 p-3 rounded-xl"
-            />
+                {budgetCategories.map((category) => (
+                  <option key={category.name} value={category.name}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="filter-month" className="block mb-1 text-slate-400 text-sm">
+                Month
+              </label>
+
+              <input
+                id="filter-month"
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="filter-min" className="block mb-1 text-slate-400 text-sm">
+                Min Amount
+              </label>
+
+              <input
+                id="filter-min"
+                type="number"
+                placeholder="Min Amount"
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value)}
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="filter-max" className="block mb-1 text-slate-400 text-sm">
+                Max Amount
+              </label>
+
+              <input
+                id="filter-max"
+                type="number"
+                placeholder="Max Amount"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+                className="w-full bg-slate-800 p-3 rounded-xl"
+              />
+            </div>
           </div>
 
           <button
@@ -684,7 +835,7 @@ export default function Expenses() {
           >
             Clear Filters
           </button>
-        </div>
+        </motion.div>
       )}
 
       <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 mb-4">
@@ -746,9 +897,12 @@ export default function Expenses() {
 
             <tbody>
               {filteredExpenses?.length > 0 ? (
-                filteredExpenses.map((expense) => (
-                  <tr
+                filteredExpenses.map((expense, index) => (
+                  <motion.tr
                     key={expense._id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2, delay: Math.min(index, 10) * 0.02 }}
                     className="border-b border-white/5 hover:bg-white/5 transition"
                   >
                     <td className="p-5">
@@ -796,18 +950,23 @@ export default function Expenses() {
 
                     <td className="p-5 text-center">
                       <button
-                        onClick={() => handleDeleteExpense(expense._id)}
+                        onClick={() => requestDeleteExpense(expense)}
+                        aria-label="Delete expense"
                         className="text-red-400 hover:text-red-300"
                       >
                         <FiTrash2 size={18} />
                       </button>
                     </td>
-                  </tr>
+                  </motion.tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="6" className="text-center p-10 text-slate-400">
-                    No expenses added yet
+                  <td colSpan="6" className="p-6">
+                    <EmptyState
+                      icon={FiTag}
+                      title="No expenses added yet"
+                      message="Expenses you log will appear here."
+                    />
                   </td>
                 </tr>
               )}
@@ -815,6 +974,16 @@ export default function Expenses() {
           </table>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => (deleting ? null : setDeleteTarget(null))}
+        onConfirm={confirmDeleteExpense}
+        title="Delete expense"
+        message="Are you sure you want to delete this expense? This action cannot be undone."
+        confirmLabel="Delete"
+        loading={deleting}
+      />
     </DashboardLayout>
   );
 }

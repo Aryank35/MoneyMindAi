@@ -18,11 +18,16 @@ import {
   ResponsiveContainer,
   Cell,
   Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
 } from "recharts";
+
+import { FiPieChart, FiCreditCard, FiInbox } from "react-icons/fi";
+import { motion } from "framer-motion";
+
+import Button from "../components/common/Button";
+import Modal from "../components/common/Modal";
+import { Skeleton } from "../components/common/Loader";
+import EmptyState from "../components/common/EmptyState";
+import CategoryProgressBar from "../components/common/CategoryProgressBar";
 
 export default function Analytics() {
   const [expenses, setExpenses] = useState([]);
@@ -31,7 +36,7 @@ export default function Analytics() {
 
   const [selectedDate, setSelectedDate] = useState(null);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(getUserId()));
 
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -39,49 +44,72 @@ export default function Analytics() {
 
   const [incomes, setIncomes] = useState([]);
 
-  const loadData = async () => {
-    try {
-      const userId = getUserId();
+  useEffect(() => {
+    let cancelled = false;
 
-      if (!userId) {
-        setLoading(false);
+    const loadData = async () => {
+      let userId;
+
+      try {
+        userId = getUserId();
+      } catch (error) {
+        console.error("Error reading logged-in user:", error);
         return;
       }
 
-      const expenseRes = await getExpensesByUser(userId);
+      if (!userId) {
+        return;
+      }
 
-      const budgetRes = await getBudgetByUser(userId);
+      try {
+        const expenseRes = await getExpensesByUser(userId);
 
-      const accountRes = await getAccountsByUser(userId);
+        const budgetRes = await getBudgetByUser(userId);
 
-      const incomeRes = await getIncomesByUser(userId);
+        const accountRes = await getAccountsByUser(userId);
 
-      setExpenses(expenseRes.data || []);
+        const incomeRes = await getIncomesByUser(userId);
 
-      setBudget(budgetRes.data?.[0] || null);
+        if (cancelled) return;
 
-      setAccounts(accountRes.data || []);
+        setExpenses(expenseRes.data || []);
 
-      setIncomes(incomeRes.data || []);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
+        setBudget(budgetRes.data?.[0] || null);
 
-  useEffect(() => {
+        setAccounts(accountRes.data || []);
+
+        setIncomes(incomeRes.data || []);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
     loadData();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-[70vh]">
-          <h2 className="text-2xl font-semibold text-slate-400">
-            Loading Analytics...
-          </h2>
+        <div className="mb-8">
+          <Skeleton className="h-10 w-56 mb-3" />
+          <Skeleton className="h-5 w-72" />
         </div>
+
+        <Skeleton className="h-96 mb-6" />
+
+        <div className="grid md:grid-cols-4 gap-4 mb-6">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-24" />
+          ))}
+        </div>
+
+        <Skeleton className="h-64" />
       </DashboardLayout>
     );
   }
@@ -101,22 +129,20 @@ export default function Analytics() {
       )
       .reduce((sum, expense) => sum + expense.amount, 0);
 
-    const percentage =
-      category.limit > 0 ? Math.round((spent / category.limit) * 100) : 0;
-
     return {
-      ...category,
-
+      name: category.name,
+      limit: category.limit,
       spent,
-
-      percentage,
-
-      remaining: category.limit - spent,
-
-      isOverBudget: spent > category.limit,
     };
   });
 
+  // Daily expense totals keyed by local "YYYY-MM-DD", built from the
+  // expense's local date components — this is the format `getAmountForDay`
+  // (and the spending calendar) actually reads. A second, overlapping loop
+  // that re-derived the same keys via `toISOString()` used to run here too,
+  // silently double-counting every day's total (and skewing the
+  // highest/lowest spending day stats) — it added no new information and
+  // has been removed.
   const expensesByDate = {};
 
   expenses.forEach((expense) => {
@@ -130,11 +156,6 @@ export default function Analytics() {
       String(expenseDate.getDate()).padStart(2, "0");
 
     expensesByDate[key] = (expensesByDate[key] || 0) + expense.amount;
-  });
-  expenses.forEach((expense) => {
-    const date = new Date(expense.expenseDate).toISOString().split("T")[0];
-
-    expensesByDate[date] = (expensesByDate[date] || 0) + expense.amount;
   });
 
   const year = currentDate.getFullYear();
@@ -198,12 +219,6 @@ export default function Analytics() {
 
   const remaining = Math.max(0, totalBudget - totalSpent);
 
-  const monthlyExpenses = expenses.filter((expense) => {
-    const date = new Date(expense.expenseDate);
-
-    return date.getMonth() === month && date.getFullYear() === year;
-  });
-
   const getAmountForDay = (day) => {
     const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(
       day,
@@ -246,24 +261,6 @@ export default function Analytics() {
 
   const netWorth = totalIncome - totalExpense;
 
-  const monthlyComparison = [
-    {
-      name: "Income",
-      amount: totalIncome,
-    },
-    {
-      name: "Expense",
-      amount: totalExpense,
-    },
-  ];
-
-  const budgetUsed =
-    totalBudget > 0 ? Math.round((totalExpense / totalBudget) * 100) : 0;
-  const healthScore = Math.max(
-    0,
-    Math.min(100, savingsRate + (100 - budgetUsed)),
-  );
-
   const transactionCount = expenses.length;
 
   const pieData = Object.entries(categorySummary).map(([name, value]) => ({
@@ -275,12 +272,6 @@ export default function Analytics() {
     name: account.name,
     value: account.balance,
   }));
-
-  const filteredExpenses = expenses.filter((expense) => {
-    const d = new Date(expense.expenseDate);
-
-    return d.getMonth() === month && d.getFullYear() === year;
-  });
 
   const formatDate = (date) =>
     date
@@ -305,156 +296,227 @@ export default function Analytics() {
     highestDay[0]
       ? `Highest spending day was ${formatDate(highestDay[0])}`
       : null,
-  ];
-
-  const topCategories = Object.entries(categorySummary)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+  ].filter(Boolean);
 
   return (
     <DashboardLayout>
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="mb-8"
+      >
+        <h1 className="text-4xl font-bold">Analytics</h1>
+
+        <p className="text-slate-400 mt-2">
+          Deep dive into your spending patterns, income and financial habits
+        </p>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6"
+      >
         <h2 className="text-xl font-semibold mb-4">Category Distribution</h2>
 
-        <ResponsiveContainer width="100%" height={350}>
-          <PieChart>
-            <Pie
-              data={pieData}
-              dataKey="value"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius="40%"
-              outerRadius="75%"
-              paddingAngle={3}
-              label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
-            >
-              {pieData.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={COLORS[index % COLORS.length]}
-                />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(value, name) => [`₹${value.toLocaleString()}`, name]}
-            />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
+        {pieData.length === 0 ? (
+          <EmptyState
+            icon={FiPieChart}
+            title="No expense data yet"
+            message="Add some expenses to see your category distribution."
+          />
+        ) : (
+          <ResponsiveContainer width="100%" height={350}>
+            <PieChart>
+              <Pie
+                data={pieData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius="40%"
+                outerRadius="75%"
+                paddingAngle={3}
+                label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+              >
+                {pieData.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={COLORS[index % COLORS.length]}
+                  />
+                ))}
+              </Pie>
+              <Tooltip
+                formatter={(value, name) => [`₹${value.toLocaleString()}`, name]}
+              />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        )}
+      </motion.div>
 
       <div className="grid md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white/5 rounded-2xl p-5">
-          <p className="text-slate-400">Monthly Income</p>
+        {[
+          {
+            label: "Monthly Income",
+            value: totalIncome,
+            valueClassName: "",
+          },
+          {
+            label: "Monthly Expense",
+            value: totalSpent,
+            valueClassName: "text-red-400",
+          },
+          {
+            label: "Net Worth",
+            value: netWorth,
+            valueClassName: "text-green-400",
+          },
+        ].map((card, index) => (
+          <motion.div
+            key={card.label}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, delay: index * 0.05 }}
+            className="bg-white/5 rounded-2xl p-5"
+          >
+            <p className="text-slate-400">{card.label}</p>
 
-          <h3 className="text-2xl font-bold">
-            ₹{totalIncome.toLocaleString()}
-          </h3>
-        </div>
+            <h3 className={`text-2xl font-bold ${card.valueClassName}`}>
+              ₹{card.value.toLocaleString()}
+            </h3>
+          </motion.div>
+        ))}
 
-        <div className="bg-white/5 rounded-2xl p-5">
-          <p className="text-slate-400">Monthly Expense</p>
-
-          <h3 className="text-2xl font-bold text-red-400">
-            ₹{totalSpent.toLocaleString()}
-          </h3>
-        </div>
-
-        <div className="bg-white/5 rounded-2xl p-5">
-          <p className="text-slate-400">Net Worth</p>
-
-          <h3 className="text-2xl font-bold text-green-400">
-            ₹{netWorth.toLocaleString()}
-          </h3>
-        </div>
-
-        <div className="bg-white/5 rounded-2xl p-5">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.15 }}
+          className="bg-white/5 rounded-2xl p-5"
+        >
           <p className="text-slate-400">Savings Rate</p>
 
           <h3 className="text-2xl font-bold">{savingsRate.toFixed(2)}%</h3>
-        </div>
+        </motion.div>
       </div>
 
-      <div className="bg-white/5 rounded-2xl p-6 mb-6">
-        <h2 className="text-3xl font-bold">₹{remaining.toLocaleString()}</h2>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="bg-white/5 rounded-2xl p-6 mb-6"
+      >
+        <p className="text-slate-400">Remaining Budget</p>
+        <h2 className="text-3xl font-bold mt-1">
+          ₹{remaining.toLocaleString()}
+        </h2>
 
-        <div className="grid grid-cols-3 mt-6">
-          <div>
-            <p>Income</p>
-            <h4>₹{totalIncome.toLocaleString()}</h4>
+        <div className="grid grid-cols-3 gap-4 mt-6">
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <p className="text-slate-400 text-sm">Income</p>
+            <h4 className="text-xl font-bold text-green-400 mt-1">
+              ₹{totalIncome.toLocaleString()}
+            </h4>
           </div>
 
-          <div>
-            <p>Expense</p>
-            <h4>₹{totalExpense.toLocaleString()}</h4>
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <p className="text-slate-400 text-sm">Expense</p>
+            <h4 className="text-xl font-bold text-red-400 mt-1">
+              ₹{totalExpense.toLocaleString()}
+            </h4>
           </div>
 
-          <div>
-            <p>Transactions</p>
-            <h4>{transactionCount}</h4>
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <p className="text-slate-400 text-sm">Transactions</p>
+            <h4 className="text-xl font-bold mt-1">{transactionCount}</h4>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      <div className="bg-white/5 rounded-2xl p-6 mb-6">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="bg-white/5 rounded-2xl p-6 mb-6"
+      >
         <h2 className="text-xl font-semibold mb-4">Accounts Overview</h2>
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={accountPieData}
-              dataKey="value"
-              nameKey="name"
-              outerRadius={100}
-            >
-              {accountPieData.map((_, index) => (
-                <Cell key={index} fill={COLORS[index % COLORS.length]} />
+
+        {accounts.length === 0 ? (
+          <EmptyState
+            icon={FiCreditCard}
+            title="No accounts yet"
+            message="Add an account to see your accounts overview here."
+          />
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={accountPieData}
+                  dataKey="value"
+                  nameKey="name"
+                  outerRadius={100}
+                >
+                  {accountPieData.map((_, index) => (
+                    <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+
+            <div className="grid md:grid-cols-3 gap-4">
+              {accounts.map((account) => (
+                <div
+                  key={account._id}
+                  className="relative overflow-hidden bg-gradient-to-br from-indigo-500/20 to-purple-500/20 backdrop-blur-xl border border-white/10 rounded-2xl p-5"
+                >
+                  <div className="text-3xl mb-3">{account.icon || "💳"}</div>
+
+                  <h3 className="font-semibold">{account.name}</h3>
+
+                  <p className="text-slate-400 text-sm">{account.type}</p>
+
+                  <h2 className="text-3xl font-bold mt-4">
+                    ₹{account.balance.toLocaleString()}
+                  </h2>
+                </div>
               ))}
-            </Pie>
-            <Tooltip />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="grid md:grid-cols-3 gap-4">
-          {accounts.map((account) => (
-            <div
-              key={account._id}
-              className="
-  relative overflow-hidden
-  bg-gradient-to-br
-  from-indigo-500/20
-  to-purple-500/20
-  backdrop-blur-xl
-  border border-white/10
-  rounded-3xl
-  p-5
-"
-            >
-              <div className="text-3xl mb-3">{account.icon || "💳"}</div>
-
-              <h3 className="font-semibold">{account.name}</h3>
-
-              <p className="text-slate-400 text-sm">{account.type}</p>
-
-              <h2 className="text-3xl font-bold mt-4">
-                ₹{account.balance.toLocaleString()}
-              </h2>
             </div>
-          ))}
-        </div>
-      </div>
+          </>
+        )}
+      </motion.div>
 
-      <div className="bg-gradient-to-r from-indigo-500/20 to-purple-500/20 rounded-2xl p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="bg-gradient-to-r from-indigo-500/20 to-purple-500/20 rounded-2xl p-6"
+      >
         <h2 className="text-xl font-bold mb-4">AI Insights</h2>
 
-        {insights.map((insight, index) => (
-          <p key={index} className="mb-2">
-            • {insight}
+        {insights.length === 0 ? (
+          <p className="text-slate-400">
+            Not enough data yet to generate insights.
           </p>
-        ))}
-      </div>
+        ) : (
+          insights.map((insight, index) => (
+            <p key={index} className="mb-2">
+              • {insight}
+            </p>
+          ))
+        )}
+      </motion.div>
 
-      <div className="bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 rounded-2xl p-6 mt-6">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 rounded-2xl p-6 mt-6"
+      >
         <h2 className="text-xl font-bold">Spending DNA</h2>
 
         <h1 className="text-4xl mt-4">
@@ -467,13 +529,19 @@ export default function Analytics() {
         <p className="text-slate-400 mt-3">
           Based on your savings rate and spending habits.
         </p>
-      </div>
+      </motion.div>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mt-6">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="bg-white/5 border border-white/10 rounded-2xl p-6 mt-6"
+      >
         <div className="flex items-center justify-between mb-6">
           <button
             onClick={handlePrevMonth}
-            className="px-4 py-2 bg-slate-800 rounded-xl"
+            aria-label="Previous month"
+            className="px-4 py-2 bg-slate-800 rounded-xl hover:bg-slate-700 transition-colors"
           >
             ←
           </button>
@@ -487,7 +555,8 @@ export default function Analytics() {
 
           <button
             onClick={handleNextMonth}
-            className="px-4 py-2 bg-slate-800 rounded-xl"
+            aria-label="Next month"
+            className="px-4 py-2 bg-slate-800 rounded-xl hover:bg-slate-700 transition-colors"
           >
             →
           </button>
@@ -513,10 +582,24 @@ export default function Analytics() {
               "0",
             )}-${String(day).padStart(2, "0")}`;
 
+            const dayLabel = new Date(year, month, day).toLocaleDateString(
+              "en-IN",
+              { day: "numeric", month: "long", year: "numeric" },
+            );
+
             return (
               <div
                 key={day}
+                role="button"
+                tabIndex={0}
+                aria-label={`${dayLabel}, ₹${amount.toLocaleString()} spent`}
                 onClick={() => setSelectedDate(dateKey)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedDate(dateKey);
+                  }
+                }}
                 className={`
     relative
     h-24
@@ -553,43 +636,47 @@ export default function Analytics() {
             );
           })}
         </div>
-      </div>
+      </motion.div>
 
-      {selectedDate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-          <div className="bg-slate-900 rounded-2xl p-6 w-[500px]">
-            <h3 className="text-xl font-bold mb-4">{selectedDate}</h3>
+      <Modal
+        isOpen={!!selectedDate}
+        onClose={() => setSelectedDate(null)}
+        title={selectedDate ? formatDate(selectedDate) : ""}
+        maxWidth="max-w-lg"
+      >
+        {selectedExpenses.length === 0 ? (
+          <EmptyState
+            icon={FiInbox}
+            title="No expenses"
+            message="No expenses were recorded on this day."
+          />
+        ) : (
+          <div className="max-h-[60vh] overflow-y-auto custom-scrollbar -mr-2 pr-2">
+            {selectedExpenses.map((expense) => (
+              <div
+                key={expense._id}
+                className="flex justify-between py-3 border-b border-slate-700"
+              >
+                <div>
+                  <p className="font-medium">{expense.category}</p>
 
-            {selectedExpenses.length === 0 ? (
-              <p className="text-slate-400">No expenses on this day</p>
-            ) : (
-              selectedExpenses.map((expense) => (
-                <div
-                  key={expense._id}
-                  className="flex justify-between py-3 border-b border-slate-700"
-                >
-                  <div>
-                    <p className="font-medium">{expense.category}</p>
-
-                    <p className="text-xs text-slate-400">
-                      {expense.note || "No note"}
-                    </p>
-                  </div>
-
-                  <div className="text-red-400">₹{expense.amount}</div>
+                  <p className="text-xs text-slate-400">
+                    {expense.note || "No note"}
+                  </p>
                 </div>
-              ))
-            )}
 
-            <button
-              onClick={() => setSelectedDate(null)}
-              className="mt-4 px-4 py-2 bg-indigo-600 rounded-xl"
-            >
-              Close
-            </button>
+                <div className="text-red-400">₹{expense.amount}</div>
+              </div>
+            ))}
           </div>
+        )}
+
+        <div className="flex justify-end mt-4">
+          <Button variant="primary" onClick={() => setSelectedDate(null)}>
+            Close
+          </Button>
         </div>
-      )}
+      </Modal>
 
       <div className="grid md:grid-cols-2 gap-4 mt-6">
         <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
@@ -615,30 +702,20 @@ export default function Analytics() {
         <h2 className="text-xl font-semibold mb-6">Budget Utilization</h2>
 
         {categoryUtilization.length === 0 ? (
-          <p className="text-slate-400">No budget categories found</p>
+          <EmptyState
+            icon={FiPieChart}
+            title="No budget categories found"
+            message="Create a budget to track category utilization here."
+          />
         ) : (
           categoryUtilization.map((category) => (
-            <div key={category.name} className="mb-5">
-              <div className="flex justify-between mb-2">
-                <span>{category.name}</span>
-
-                <span>
-                  ₹{category.spent}
-                  {" / "}₹{category.limit}
-                </span>
-              </div>
-
-              <div className="w-full bg-slate-700 rounded-full h-3">
-                <div
-                  className={`h-3 rounded-full ${
-                    category.isOverBudget ? "bg-red-500" : "bg-indigo-500"
-                  }`}
-                  style={{
-                    width: `${Math.min(category.percentage, 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
+            <CategoryProgressBar
+              key={category.name}
+              name={category.name}
+              spent={category.spent}
+              limit={category.limit}
+              className="mb-5"
+            />
           ))
         )}
       </div>

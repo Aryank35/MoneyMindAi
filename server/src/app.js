@@ -9,6 +9,7 @@ import wishlistRoutes from "./routes/wishlistRoutes.js";
 import incomeRoutes from "./routes/incomeRoutes.js";
 import accountRoutes from "./routes/accountRoutes.js";
 import planRoutes from "./routes/planRoutes.js";
+import transferRoutes from "./routes/transferRoutes.js";
 
 const app = express();
 
@@ -25,6 +26,8 @@ app.use("/api/plans", planRoutes);
 app.use("/api/income", incomeRoutes);
 
 app.use("/api/accounts", accountRoutes);
+
+app.use("/api/transfers", transferRoutes);
 
 app.get("/", (req, res) => {
   res.json({
