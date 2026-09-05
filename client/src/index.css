@@ -26,6 +26,10 @@
     Roboto, sans-serif;
   --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
 
+  /* Height of the fixed navbar. Navbar.jsx sizes itself from this and the
+     main content pads itself clear of it, so the two cannot drift apart. */
+  --nav-h: 5rem;
+
   /* ---- Brand ---- */
   --color-brand: #cfaf66;
   --color-brand-muted: #a3823d;

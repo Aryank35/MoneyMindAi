@@ -9,11 +9,26 @@ const fieldClasses = (error, className) => `
 `;
 
 const Input = forwardRef(function Input(
-  { label, error, className = "", containerClassName = "", id, ...props },
+  {
+    label,
+    error,
+    hint,
+    className = "",
+    containerClassName = "",
+    id,
+    ...props
+  },
   ref,
 ) {
   const generatedId = useId();
   const inputId = id || generatedId;
+
+  // An error supersedes the hint, so only one of the two is ever announced.
+  const describedBy = error
+    ? `${inputId}-error`
+    : hint
+      ? `${inputId}-hint`
+      : undefined;
 
   return (
     <div className={`flex flex-col gap-1.5 ${containerClassName}`}>
@@ -28,14 +43,20 @@ const Input = forwardRef(function Input(
         id={inputId}
         className={fieldClasses(error, className)}
         aria-invalid={!!error}
-        aria-describedby={error ? `${inputId}-error` : undefined}
+        aria-describedby={describedBy}
         {...props}
       />
 
-      {error && (
+      {error ? (
         <p id={`${inputId}-error`} className="text-xs text-red-400">
           {error}
         </p>
+      ) : (
+        hint && (
+          <p id={`${inputId}-hint`} className="text-xs text-slate-500">
+            {hint}
+          </p>
+        )
       )}
     </div>
   );

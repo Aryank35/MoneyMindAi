@@ -104,15 +104,22 @@ export default function DashboardLayout({ children }) {
       </div>
 
       {/* Main Content */}
+      {/* Padding is set per side. A `p-*` shorthand here would be generated
+          after `pt-*` in the stylesheet - and its `lg:` variant later still -
+          silently overriding the top padding at wide viewports and letting
+          the fixed navbar overlap the content. */}
       <main
         className="
-    lg:ml-[280px]
-    pt-24
-    min-h-screen
-    text-white
-    p-4
-    lg:p-8
-  "
+          lg:ml-[280px]
+          min-h-screen
+          text-white
+          px-4
+          lg:px-8
+          pb-8
+          lg:pb-10
+          pt-[calc(var(--nav-h)+1rem)]
+          lg:pt-[calc(var(--nav-h)+2rem)]
+        "
       >
         {children}
       </main>

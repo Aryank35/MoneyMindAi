@@ -28,6 +28,22 @@ export const setAccountRole = async (id, role, value) => {
   return response.data;
 };
 
+// Every credit card with its dues, cycle and utilisation worked out.
+export const getCardsOverview = async (userId) => {
+  const response = await api.get(`/accounts/cards/${userId}`);
+
+  return response.data;
+};
+
+// Ledger for one account over a period, with a running balance.
+export const getAccountStatement = async (id, { from, to } = {}) => {
+  const query = from && to ? `?from=${from}&to=${to}` : "";
+
+  const response = await api.get(`/accounts/${id}/statement${query}`);
+
+  return response.data;
+};
+
 // What deleting this account leaves behind - shown in the confirmation.
 export const getAccountDeleteImpact = async (id) => {
   const response = await api.get(`/accounts/${id}/delete-impact`);

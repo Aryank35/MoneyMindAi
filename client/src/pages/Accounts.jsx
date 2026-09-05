@@ -18,6 +18,7 @@ import EmptyState from "../components/common/EmptyState";
 import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
+import StatementModal from "../components/common/StatementModal";
 
 // The two exclusive account roles, described once and reused by the cards
 // and both modals. Adding another exclusive role means one entry here.
@@ -35,6 +36,32 @@ const ROLE_DEFS = [
     help: "The EPF withheld from each salary entry accumulates here instead of your bank.",
   },
 ];
+
+// A credit card's balance is negative while money is owed. Showing a bare
+// "-12,000" reads like a bug, so cards are described in their own terms.
+const isCard = (account) => account.type === "Credit Card";
+
+const describeBalance = (account) => {
+  const value = Number(account.balance || 0);
+
+  if (!isCard(account)) return money(value);
+
+  if (value < 0) return money(-value);
+
+  return money(value);
+};
+
+const balanceCaption = (account) => {
+  const value = Number(account.balance || 0);
+
+  if (!isCard(account)) return null;
+
+  if (value < 0) return "outstanding";
+
+  if (value > 0) return "in credit";
+
+  return "nothing owed";
+};
 
 const money = (value) =>
   new Intl.NumberFormat("en-IN", {
@@ -59,6 +86,8 @@ export default function Accounts() {
   const [deleteImpact, setDeleteImpact] = useState(null);
 
   const [roleBusy, setRoleBusy] = useState(null);
+
+  const [statementAccount, setStatementAccount] = useState(null);
 
   const [deleting, setDeleting] = useState(false);
 
@@ -251,10 +280,17 @@ export default function Accounts() {
     }
   };
 
-  const totalAssets = accounts.reduce(
-    (sum, account) => sum + Number(account.balance || 0),
-    0,
-  );
+  // Cards carry debt, so they are held apart from assets rather than
+  // quietly dragging the headline figure down with no explanation.
+  const totalAssets = accounts
+    .filter((account) => !isCard(account))
+    .reduce((sum, account) => sum + Number(account.balance || 0), 0);
+
+  const totalCardDebt = accounts
+    .filter(isCard)
+    .reduce((sum, account) => sum + Math.max(-Number(account.balance || 0), 0), 0);
+
+  const netWorth = totalAssets - totalCardDebt;
 
   const salaryAccount = accounts.find((account) => account.isSalaryAccount);
 
@@ -279,12 +315,21 @@ export default function Accounts() {
           </p>
 
           <h2 className="mt-3 text-5xl font-semibold tracking-tight text-white">
-            ₹{totalAssets.toLocaleString()}
+            {money(totalAssets)}
           </h2>
 
           <p className="mt-3 text-sm text-slate-400">
             Across {accounts.length} account{accounts.length === 1 ? "" : "s"}
           </p>
+
+          {totalCardDebt > 0 && (
+            <p className="mt-2 text-sm text-slate-400">
+              Less {money(totalCardDebt)} owed on cards —{" "}
+              <span className="font-semibold text-white">
+                {money(netWorth)} net
+              </span>
+            </p>
+          )}
 
           <div className="mt-5 h-px bg-white/10" />
 
@@ -324,9 +369,26 @@ export default function Accounts() {
             {accounts.map((account) => {
               const theme = accountThemes[account.type] || accountThemes.Bank;
 
-              const allocation =
-                totalAssets > 0
-                  ? ((Number(account.balance) / totalAssets) * 100).toFixed(1)
+              // Cards are measured against their credit limit; everything
+              // else against total assets. Both are clamped so a negative
+              // balance can never produce a negative bar width.
+              const allocation = isCard(account)
+                ? Number(account.card?.creditLimit) > 0
+                  ? Math.min(
+                      (Math.max(-Number(account.balance || 0), 0) /
+                        Number(account.card.creditLimit)) *
+                        100,
+                      100,
+                    ).toFixed(1)
+                  : 0
+                : totalAssets > 0
+                  ? Math.min(
+                      Math.max(
+                        (Number(account.balance || 0) / totalAssets) * 100,
+                        0,
+                      ),
+                      100,
+                    ).toFixed(1)
                   : 0;
 
               return (
@@ -373,9 +435,21 @@ export default function Accounts() {
                     )}
                   </div>
 
-                  <h3 className="text-4xl font-bold mt-4">
-                    ₹{Number(account.balance).toLocaleString()}
+                  <h3
+                    className={`mt-4 text-4xl font-bold ${
+                      isCard(account) && Number(account.balance) < 0
+                        ? "text-red-300"
+                        : ""
+                    }`}
+                  >
+                    {describeBalance(account)}
                   </h3>
+
+                  {balanceCaption(account) && (
+                    <p className="text-xs text-slate-500">
+                      {balanceCaption(account)}
+                    </p>
+                  )}
 
                   <div className="mt-4">
                     <div className="h-1 w-full rounded-full bg-white/10">
@@ -388,7 +462,11 @@ export default function Accounts() {
                     </div>
 
                     <p className="mt-2 text-xs text-slate-500">
-                      {allocation}% of assets
+                      {isCard(account)
+                        ? Number(account.card?.creditLimit) > 0
+                          ? `${allocation}% of ${money(account.card.creditLimit)} limit`
+                          : "No credit limit set"
+                        : `${allocation}% of assets`}
                     </p>
                   </div>
 
@@ -436,6 +514,14 @@ export default function Accounts() {
                         </button>
                       );
                     })}
+
+                    <button
+                      onClick={() => setStatementAccount(account)}
+                      aria-label={`View statement for ${account.name}`}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 py-2 text-sm text-slate-300 transition hover:border-white/20 hover:text-white"
+                    >
+                      View Statement
+                    </button>
 
                     <button
                       onClick={() => {
@@ -508,6 +594,13 @@ export default function Accounts() {
               <option>EPF</option>
             </Select>
 
+            {formData.type === "Credit Card" && (
+              <p className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-400">
+                Credit cards are managed on the Cards page, where you can set
+                the limit, statement day and due date, and track dues.
+              </p>
+            )}
+
             <Input
               label="Opening Balance"
               type="number"
@@ -574,6 +667,12 @@ export default function Accounts() {
             </Button>
           </div>
         </Modal>
+
+        <StatementModal
+          account={statementAccount}
+          isOpen={!!statementAccount}
+          onClose={() => setStatementAccount(null)}
+        />
 
         <Modal
           isOpen={showDeleteModal}
@@ -684,6 +783,13 @@ export default function Accounts() {
               <option>Credit Card</option>
               <option>EPF</option>
             </Select>
+
+            {formData.type === "Credit Card" && (
+              <p className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-400">
+                Credit cards are managed on the Cards page, where you can set
+                the limit, statement day and due date, and track dues.
+              </p>
+            )}
 
             <Input
               label="Balance"

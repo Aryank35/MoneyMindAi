@@ -30,6 +30,20 @@ import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import CategoryProgressBar from "../components/common/CategoryProgressBar";
 
+// "YYYY-MM-DD" in the viewer's own timezone. Every calendar key in this
+// file goes through here so cell totals and day listings agree.
+const toLocalDateKey = (value) => {
+  const date = new Date(value);
+
+  return (
+    date.getFullYear() +
+    "-" +
+    String(date.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(date.getDate()).padStart(2, "0")
+  );
+};
+
 export default function Analytics() {
   const [expenses, setExpenses] = useState([]);
 
@@ -147,14 +161,7 @@ export default function Analytics() {
   const expensesByDate = {};
 
   expenses.forEach((expense) => {
-    const expenseDate = new Date(expense.expenseDate);
-
-    const key =
-      expenseDate.getFullYear() +
-      "-" +
-      String(expenseDate.getMonth() + 1).padStart(2, "0") +
-      "-" +
-      String(expenseDate.getDate()).padStart(2, "0");
+    const key = toLocalDateKey(expense.expenseDate);
 
     expensesByDate[key] = (expensesByDate[key] || 0) + expense.amount;
   });
@@ -183,22 +190,19 @@ export default function Analytics() {
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  const calendarCells = [];
-
-  for (let i = 0; i < firstDay; i++) {
-    calendarCells.push(null);
-  }
-
-  for (let day = 1; day <= daysInMonth; day++) {
-    calendarCells.push(day);
-  }
+  // Only real days are rendered. The first one is pushed to its weekday
+  // column with grid-column-start instead of padding the grid with filler
+  // divs - fewer nodes, and no placeholder keys to collide with day keys.
+  const calendarCells = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
   const COLORS = CHART_COLORS;
 
+  // Must use the same local key the calendar cells are built from. This
+  // previously compared against toISOString(), which is UTC - east of
+  // Greenwich that put early-morning spending on the previous day, so a cell
+  // could show a total and then open to an empty list.
   const selectedExpenses = expenses.filter(
-    (expense) =>
-      new Date(expense.expenseDate).toISOString().split("T")[0] ===
-      selectedDate,
+    (expense) => toLocalDateKey(expense.expenseDate) === selectedDate,
   );
 
   const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -560,11 +564,7 @@ export default function Analytics() {
             </div>
           ))}
 
-          {calendarCells.map((day, index) => {
-            if (!day) {
-              return <div key={index} className="h-20" />;
-            }
-
+          {calendarCells.map((day) => {
             const amount = getAmountForDay(day);
 
             const dateKey = `${year}-${String(month + 1).padStart(
@@ -579,9 +579,10 @@ export default function Analytics() {
 
             return (
               <div
-                key={day}
+                key={`${year}-${month}-${day}`}
                 role="button"
                 tabIndex={0}
+                style={day === 1 ? { gridColumnStart: firstDay + 1 } : undefined}
                 aria-label={`${dayLabel}, ₹${amount.toLocaleString()} spent`}
                 onClick={() => setSelectedDate(dateKey)}
                 onKeyDown={(event) => {

@@ -68,6 +68,65 @@ const accountSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    // Only meaningful when type is "Credit Card". A card is modelled as an
+    // account rather than its own entity: expenses already point at accounts
+    // and paying a bill is already a transfer, so splitting it out would fork
+    // both flows. `balance` goes negative as the card is spent on.
+    card: {
+      _id: false,
+
+      last4: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+
+      network: {
+        type: String,
+        enum: ["Visa", "Mastercard", "RuPay", "Amex", "Diners", "Other"],
+        default: "Other",
+      },
+
+      issuer: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+
+      creditLimit: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      // Debt already carried on the card when it was first set up, before
+      // any expense was tracked here. Held as a positive figure - the way a
+      // statement quotes it - while `balance` stays negative. Kept as its own
+      // field so it can be corrected later by delta, without disturbing the
+      // spends and payments recorded since.
+      openingOutstanding: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      // Day of month the statement is generated, and the day payment is due.
+      // Clamped to the real month length when a cycle is computed.
+      statementDay: {
+        type: Number,
+        min: 1,
+        max: 31,
+        default: 1,
+      },
+
+      dueDay: {
+        type: Number,
+        min: 1,
+        max: 31,
+        default: 20,
+      },
+    },
   },
   {
     timestamps: true,

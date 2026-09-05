@@ -20,6 +20,27 @@ import { PageLoader } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 
+// A credit card is funded by its limit, not by a positive balance, so
+// "can this account cover the spend" is a different question per type.
+const isCard = (account) => account?.type === "Credit Card";
+
+const getOutstanding = (account) =>
+  Math.max(-Number(account?.balance || 0), 0);
+
+// How much the account can still spend. null means "no ceiling known" - a
+// card with no limit recorded, which must not be blocked on a guess.
+const getSpendingPower = (account) => {
+  if (!account) return null;
+
+  if (!isCard(account)) return Number(account.balance || 0);
+
+  const limit = Number(account.card?.creditLimit || 0);
+
+  if (limit <= 0) return null;
+
+  return Math.max(limit - getOutstanding(account), 0);
+};
+
 const money = (value) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -133,18 +154,8 @@ export default function Expenses() {
 
   const handleAddExpense = async () => {
     try {
-      if (!formData.category || !formData.amount) {
-        return;
-      }
-
-      const amount = Number(formData.amount);
-
-      if (amount <= 0) {
-        toast.error("Amount must be greater than 0");
-
-        return;
-      }
-
+      // Budget first: with no budget there are no categories to pick, so a
+      // missing category is a symptom, not the thing to report.
       if (!budget) {
         toast.error("Please create a budget first");
 
@@ -152,12 +163,39 @@ export default function Expenses() {
       }
 
       if (!formData.account) {
-        toast.error("Please select account");
+        toast.error("Please select an account");
+
         return;
       }
 
-      if (selectedAccountData && amount > Number(selectedAccountData.balance)) {
-        toast.error("Insufficient balance in selected account");
+      if (!formData.category) {
+        toast.error("Please select a category");
+
+        return;
+      }
+
+      if (!formData.amount) {
+        toast.error("Please enter an amount");
+
+        return;
+      }
+
+      const amount = Number(formData.amount);
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error("Amount must be greater than 0");
+
+        return;
+      }
+
+      const spendingPower = getSpendingPower(selectedAccountData);
+
+      if (spendingPower !== null && amount > spendingPower) {
+        toast.error(
+          isCard(selectedAccountData)
+            ? `Exceeds available credit on ${selectedAccountData.name} (${money(spendingPower)} left)`
+            : "Insufficient balance in selected account",
+        );
 
         return;
       }
@@ -307,9 +345,14 @@ export default function Expenses() {
     .filter((expense) => expense.category === formData.category)
     .reduce((sum, expense) => sum + Number(expense.amount), 0);
 
-  const remainingAccountBalance = selectedAccountData
-    ? Number(selectedAccountData.balance) - Number(formData.amount || 0)
-    : 0;
+  const spendingPower = getSpendingPower(selectedAccountData);
+
+  // For a card this is credit left after the spend; for everything else it
+  // is the balance left behind.
+  const remainingAccountBalance =
+    spendingPower === null
+      ? null
+      : spendingPower - Number(formData.amount || 0);
 
   return (
     <DashboardLayout>
@@ -642,7 +685,9 @@ export default function Expenses() {
                 <p className="text-xs text-slate-400">{account.type}</p>
 
                 <p className="text-green-400 mt-2">
-                  ₹{Number(account.balance || 0).toLocaleString()}
+                  {isCard(account)
+                    ? `${money(getOutstanding(account))} owed`
+                    : money(account.balance)}
                 </p>
               </motion.button>
             ))}
@@ -670,16 +715,31 @@ export default function Expenses() {
 
             <p className="text-slate-400">{selectedAccountData?.type}</p>
 
-            <p className="text-2xl font-bold text-green-400 mt-2">
-              ₹{Number(selectedAccountData?.balance || 0).toLocaleString()}
+            <p
+              className={`mt-2 text-2xl font-bold ${
+                isCard(selectedAccountData)
+                  ? "text-red-300"
+                  : "text-green-400"
+              }`}
+            >
+              {isCard(selectedAccountData)
+                ? money(getOutstanding(selectedAccountData))
+                : money(selectedAccountData?.balance)}
             </p>
+
+            {isCard(selectedAccountData) && (
+              <p className="text-xs text-slate-500">outstanding</p>
+            )}
           </div>
 
           <h3 className="font-semibold">{selectedAccountData?.name}</h3>
 
           <p className="text-green-400">
-            Available Balance: ₹
-            {Number(selectedAccountData?.balance || 0).toLocaleString()}
+            {isCard(selectedAccountData)
+              ? spendingPower === null
+                ? "No credit limit recorded"
+                : `Available Credit: ${money(spendingPower)}`
+              : `Available Balance: ${money(selectedAccountData?.balance)}`}
           </p>
           <p className="text-slate-400 text-xs">
             Used ₹{categorySpent} / ₹{categoryBudget?.limit || 0}
@@ -693,12 +753,18 @@ export default function Expenses() {
           <FiPlus />
           Save Expense
         </button>
-        {remainingAccountBalance < 0 && (
-          <p className="text-red-500 text-sm mt-2">⚠ Insufficient balance</p>
+        {remainingAccountBalance !== null && remainingAccountBalance < 0 && (
+          <p className="mt-2 text-sm text-red-400">
+            {isCard(selectedAccountData)
+              ? "Exceeds available credit on this card"
+              : "Insufficient balance"}
+          </p>
         )}
 
         <p className="text-yellow-400 mt-2">
-          Balance After Expense: ₹{remainingAccountBalance.toLocaleString()}
+          {remainingAccountBalance === null
+            ? "Balance After Expense: —"
+            : `Balance After Expense: ${money(remainingAccountBalance)}`}
         </p>
         <p className="text-xs text-slate-400">
           Monthly Limit: ₹{categoryBudget?.limit || 0}

@@ -7,12 +7,21 @@ import {
   deleteAccount,
   getAccountDeleteImpact,
 } from "../controllers/accountController.js";
+import {
+  getAccountStatement,
+  getCardsOverview,
+} from "../controllers/statementController.js";
 
 const router = express.Router();
 
 router.post("/", createAccount);
 
 router.get("/user/:userId", getAccountsByUser);
+
+// Declared before "/:id/..." so "cards" is not read as an account id.
+router.get("/cards/:userId", getCardsOverview);
+
+router.get("/:id/statement", getAccountStatement);
 
 router.get("/:id/delete-impact", getAccountDeleteImpact);
 

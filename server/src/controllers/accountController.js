@@ -141,7 +141,31 @@ export const updateAccount = async (req, res) => {
       });
     }
 
-    const account = await Account.findByIdAndUpdate(req.params.id, req.body, {
+    const update = { ...req.body };
+
+    // Correcting the opening outstanding must not throw away the spends and
+    // payments booked since it was set, so the balance moves by the change
+    // rather than being rewritten from it. Debt is stored negative, hence the
+    // sign flip: raising the opening debt pushes the balance further down.
+    const nextOutstanding = req.body.card?.openingOutstanding;
+
+    if (
+      existingAccount.type === "Credit Card" &&
+      nextOutstanding !== undefined &&
+      req.body.balance === undefined
+    ) {
+      const previous = Math.abs(
+        Number(existingAccount.card?.openingOutstanding || 0),
+      );
+
+      const next = Math.abs(Number(nextOutstanding || 0));
+
+      if (previous !== next) {
+        update.balance = Number(existingAccount.balance || 0) + previous - next;
+      }
+    }
+
+    const account = await Account.findByIdAndUpdate(req.params.id, update, {
       returnDocument: "after",
     });
 

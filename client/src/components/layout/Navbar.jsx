@@ -65,7 +65,7 @@ export default function Navbar({ onMenuClick, health }) {
         right-0
         z-50
 
-        h-20
+        h-[var(--nav-h)]
 
         backdrop-blur-xl
         bg-slate-950/80

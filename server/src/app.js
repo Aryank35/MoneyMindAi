@@ -10,6 +10,7 @@ import incomeRoutes from "./routes/incomeRoutes.js";
 import accountRoutes from "./routes/accountRoutes.js";
 import planRoutes from "./routes/planRoutes.js";
 import transferRoutes from "./routes/transferRoutes.js";
+import investmentRoutes from "./routes/investmentRoutes.js";
 
 const app = express();
 
@@ -29,13 +30,13 @@ app.use("/api/accounts", accountRoutes);
 
 app.use("/api/transfers", transferRoutes);
 
+app.use("/api/investments", investmentRoutes);
+
 app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "MoneyMind API Running",
   });
 });
-
-app.use("/api/users", userRoutes);
 
 export default app;
