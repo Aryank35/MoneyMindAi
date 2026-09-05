@@ -12,12 +12,20 @@ import {
 } from "../services/expenseService";
 
 import { getUserId } from "../utils/auth";
+import { CHART_ACCENT } from "../utils/chartTheme";
 
 import { getBudgetByUser, updateBudget } from "../services/budgetService";
 import { useToast } from "../components/common/Toast";
 import { PageLoader } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import ConfirmDialog from "../components/common/ConfirmDialog";
+
+const money = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 
 export default function Expenses() {
   const toast = useToast();
@@ -653,7 +661,7 @@ export default function Expenses() {
           <div
             className="mt-4 rounded-2xl p-5 border"
             style={{
-              borderColor: selectedAccountData?.color || "#6366F1",
+              borderColor: selectedAccountData?.color || CHART_ACCENT,
             }}
           >
             <h3 className="font-bold text-lg">
@@ -979,8 +987,19 @@ export default function Expenses() {
         isOpen={!!deleteTarget}
         onClose={() => (deleting ? null : setDeleteTarget(null))}
         onConfirm={confirmDeleteExpense}
-        title="Delete expense"
-        message="Are you sure you want to delete this expense? This action cannot be undone."
+        title="Delete this expense?"
+        message={
+          deleteTarget
+            ? `This permanently deletes the ${deleteTarget.category || "expense"} of ${money(deleteTarget.amount)}${
+                accounts.find((a) => a._id === deleteTarget.accountId)
+                  ? ` and refunds it to ${accounts.find((a) => a._id === deleteTarget.accountId).name}, taking that balance to ${money(
+                      Number(accounts.find((a) => a._id === deleteTarget.accountId).balance || 0) +
+                        Number(deleteTarget.amount || 0),
+                    )}`
+                  : ""
+              }. This cannot be undone.`
+            : ""
+        }
         confirmLabel="Delete"
         loading={deleting}
       />

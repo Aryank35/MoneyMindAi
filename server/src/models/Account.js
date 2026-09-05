@@ -15,7 +15,15 @@ const accountSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ["Bank", "Cash", "UPI", "Wallet", "Investment", "Credit Card"],
+      enum: [
+        "Bank",
+        "Cash",
+        "UPI",
+        "Wallet",
+        "Investment",
+        "Credit Card",
+        "EPF",
+      ],
       default: "Bank",
     },
 
@@ -41,7 +49,7 @@ const accountSchema = new mongoose.Schema(
 
     color: {
       type: String,
-      default: "#6366F1",
+      default: "#CFAF66",
     },
 
     isPrimary: {
@@ -50,6 +58,13 @@ const accountSchema = new mongoose.Schema(
     },
 
     isSalaryAccount: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Receives the EPF slice of salary entries. Held separately from the
+    // salary account because that money never touches the bank.
+    isEpfAccount: {
       type: Boolean,
       default: false,
     },

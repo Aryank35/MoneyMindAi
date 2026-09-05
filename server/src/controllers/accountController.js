@@ -1,22 +1,47 @@
 import Account from "../models/Account.js";
+import Income from "../models/Income.js";
+import Expense from "../models/Expense.js";
 
-// Only one account per user can be the salary account, so promoting one has to
-// demote every other account the user owns.
-const demoteOtherSalaryAccounts = async (userId, keepId) => {
-  if (!userId) return;
+const ROLES = {
+  isSalaryAccount: "salary account",
+  isEpfAccount: "EPF account",
+};
 
+// The account currently holding a role, ignoring the one being edited.
+const findRoleHolder = (userId, flag, exceptId) => {
   const filter = {
     userId,
-    isSalaryAccount: true,
+    [flag]: true,
   };
 
-  if (keepId) {
-    filter._id = { $ne: keepId };
+  if (exceptId) {
+    filter._id = { $ne: exceptId };
   }
 
-  await Account.updateMany(filter, {
-    $set: { isSalaryAccount: false },
-  });
+  return Account.findOne(filter);
+};
+
+// Salary and EPF are exclusive roles, and they are released deliberately
+// rather than stolen. The UI disables the option once a role is held; this
+// makes the same rule true for the API, so a stale page or a direct call
+// can't quietly re-point salary at a different account.
+const findRoleConflict = async (userId, body, exceptId) => {
+  if (!userId) return null;
+
+  for (const [flag, label] of Object.entries(ROLES)) {
+    if (body[flag] !== true) continue;
+
+    const holder = await findRoleHolder(userId, flag, exceptId);
+
+    if (holder) {
+      return {
+        status: 409,
+        message: `${holder.name} is already your ${label}. Remove the role from it first, then set it here.`,
+      };
+    }
+  }
+
+  return null;
 };
 
 export const createAccount = async (req, res) => {
@@ -29,17 +54,33 @@ export const createAccount = async (req, res) => {
     // re-pointing salary at a newly added account would be worse.
     const hasAccounts = await Account.exists({ userId });
 
+    const conflict = await findRoleConflict(userId, req.body);
+
+    if (conflict) {
+      return res.status(conflict.status).json({
+        success: false,
+        message: conflict.message,
+      });
+    }
+
     const isSalaryAccount =
       req.body.isSalaryAccount === true ||
       (!hasAccounts && (type || "Bank") === "Bank");
 
-    if (isSalaryAccount) {
-      await demoteOtherSalaryAccounts(userId);
-    }
+    // An account of type EPF is what it says on the tin - claim the role,
+    // but only while it is going spare.
+    const hasEpfAccount = await Account.exists({
+      userId,
+      isEpfAccount: true,
+    });
+
+    const isEpfAccount =
+      req.body.isEpfAccount === true || (!hasEpfAccount && type === "EPF");
 
     const account = await Account.create({
       ...req.body,
       isSalaryAccount,
+      isEpfAccount,
     });
 
     res.status(201).json({
@@ -60,6 +101,7 @@ export const getAccountsByUser = async (req, res) => {
       userId: req.params.userId,
     }).sort({
       isSalaryAccount: -1,
+      isEpfAccount: -1,
       createdAt: 1,
     });
 
@@ -86,12 +128,21 @@ export const updateAccount = async (req, res) => {
       });
     }
 
-    if (req.body.isSalaryAccount === true) {
-      await demoteOtherSalaryAccounts(existingAccount.userId, existingAccount._id);
+    const conflict = await findRoleConflict(
+      existingAccount.userId,
+      req.body,
+      existingAccount._id,
+    );
+
+    if (conflict) {
+      return res.status(conflict.status).json({
+        success: false,
+        message: conflict.message,
+      });
     }
 
     const account = await Account.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
+      returnDocument: "after",
     });
 
     res.json({
@@ -113,6 +164,51 @@ export const deleteAccount = async (req, res) => {
     res.json({
       success: true,
       message: "Account deleted",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Deleting an account leaves any income booked against it orphaned, so the
+// confirmation needs to say how much is at stake before it happens.
+export const getAccountDeleteImpact = async (req, res) => {
+  try {
+    const account = await Account.findById(req.params.id);
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Account not found",
+      });
+    }
+
+    const [incomeCount, incomeTotal, expenseCount] = await Promise.all([
+      Income.countDocuments({ accountId: account._id }),
+      Income.aggregate([
+        { $match: { accountId: account._id } },
+        { $group: { _id: null, total: { $sum: "$creditedAmount" } } },
+      ]),
+      Expense.countDocuments({ accountId: account._id }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        name: account.name,
+        balance: account.balance,
+        isSalaryAccount: account.isSalaryAccount,
+        isEpfAccount: account.isEpfAccount,
+        incomeCount,
+        incomeTotal: incomeTotal[0]?.total || 0,
+        expenseCount,
+        // Linked records are not deleted with the account - they are left
+        // pointing at an account that no longer exists.
+        hasLinkedRecords: incomeCount > 0 || expenseCount > 0,
+      },
     });
   } catch (error) {
     res.status(500).json({

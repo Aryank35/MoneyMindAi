@@ -1,11 +1,367 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   MONEYMIND DESIGN SYSTEM
+
+   The app previously drew from 17 Tailwind colour families at once. Rather
+   than rewrite ~640 class names across every page, the palettes themselves
+   are redefined here, so existing utilities resolve to a single restrained
+   system:
+
+     slate / gray / zinc / neutral / stone  ->  warm near-black neutrals
+     indigo / purple / violet / fuchsia / pink -> one gold accent
+     emerald / green / teal / lime          ->  muted jade   (money in)
+     red / rose / orange                    ->  muted clay   (money out, danger)
+     amber / yellow                         ->  muted brass  (warning)
+     cyan / sky / blue                      ->  muted steel  (information)
+
+   Every hue is low-chroma and dark-first. To retune the whole app, change
+   the ramps below - nothing else needs to move.
+   ========================================================================== */
+
 @theme {
-  --color-brand-indigo: #6366f1;
-  --color-brand-purple: #a855f7;
-  --color-brand-pink: #ec4899;
-  --shadow-brand: 0 20px 40px -12px rgba(99, 102, 241, 0.35);
+  /* ---- Typography ---- */
+  --font-sans:
+    "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+
+  /* ---- Brand ---- */
+  --color-brand: #cfaf66;
+  --color-brand-muted: #a3823d;
+  --shadow-brand: 0 24px 48px -20px rgba(0, 0, 0, 0.8);
+
+  /* =======================================================================
+     NEUTRALS - the surface of the entire app
+     ======================================================================= */
+  --color-slate-50: #f7f7f8;
+  --color-slate-100: #ededef;
+  --color-slate-200: #d9d9dd;
+  --color-slate-300: #b9b9c0;
+  --color-slate-400: #8a8a94;
+  --color-slate-500: #63636d;
+  --color-slate-600: #45454e;
+  --color-slate-700: #2e2e36;
+  --color-slate-800: #1c1c22;
+  --color-slate-900: #131318;
+  --color-slate-950: #0a0a0d;
+
+  --color-gray-50: #f7f7f8;
+  --color-gray-100: #ededef;
+  --color-gray-200: #d9d9dd;
+  --color-gray-300: #b9b9c0;
+  --color-gray-400: #8a8a94;
+  --color-gray-500: #63636d;
+  --color-gray-600: #45454e;
+  --color-gray-700: #2e2e36;
+  --color-gray-800: #1c1c22;
+  --color-gray-900: #131318;
+  --color-gray-950: #0a0a0d;
+
+  --color-zinc-50: #f7f7f8;
+  --color-zinc-100: #ededef;
+  --color-zinc-200: #d9d9dd;
+  --color-zinc-300: #b9b9c0;
+  --color-zinc-400: #8a8a94;
+  --color-zinc-500: #63636d;
+  --color-zinc-600: #45454e;
+  --color-zinc-700: #2e2e36;
+  --color-zinc-800: #1c1c22;
+  --color-zinc-900: #131318;
+  --color-zinc-950: #0a0a0d;
+
+  --color-neutral-50: #f7f7f8;
+  --color-neutral-100: #ededef;
+  --color-neutral-200: #d9d9dd;
+  --color-neutral-300: #b9b9c0;
+  --color-neutral-400: #8a8a94;
+  --color-neutral-500: #63636d;
+  --color-neutral-600: #45454e;
+  --color-neutral-700: #2e2e36;
+  --color-neutral-800: #1c1c22;
+  --color-neutral-900: #131318;
+  --color-neutral-950: #0a0a0d;
+
+  --color-stone-50: #f7f7f8;
+  --color-stone-100: #ededef;
+  --color-stone-200: #d9d9dd;
+  --color-stone-300: #b9b9c0;
+  --color-stone-400: #8a8a94;
+  --color-stone-500: #63636d;
+  --color-stone-600: #45454e;
+  --color-stone-700: #2e2e36;
+  --color-stone-800: #1c1c22;
+  --color-stone-900: #131318;
+  --color-stone-950: #0a0a0d;
+
+  /* =======================================================================
+     GOLD - the single accent. Interactive, brand, emphasis.
+     ======================================================================= */
+  --color-indigo-50: #fbf7ec;
+  --color-indigo-100: #f5ecd6;
+  --color-indigo-200: #ebdcb2;
+  --color-indigo-300: #dec68a;
+  --color-indigo-400: #cfaf66;
+  --color-indigo-500: #be9a4c;
+  --color-indigo-600: #a3823d;
+  --color-indigo-700: #82662f;
+  --color-indigo-800: #5e4a23;
+  --color-indigo-900: #3c301a;
+  --color-indigo-950: #221b0f;
+
+  --color-purple-50: #fbf7ec;
+  --color-purple-100: #f5ecd6;
+  --color-purple-200: #ebdcb2;
+  --color-purple-300: #dec68a;
+  --color-purple-400: #cfaf66;
+  --color-purple-500: #be9a4c;
+  --color-purple-600: #a3823d;
+  --color-purple-700: #82662f;
+  --color-purple-800: #5e4a23;
+  --color-purple-900: #3c301a;
+  --color-purple-950: #221b0f;
+
+  --color-violet-50: #fbf7ec;
+  --color-violet-100: #f5ecd6;
+  --color-violet-200: #ebdcb2;
+  --color-violet-300: #dec68a;
+  --color-violet-400: #cfaf66;
+  --color-violet-500: #be9a4c;
+  --color-violet-600: #a3823d;
+  --color-violet-700: #82662f;
+  --color-violet-800: #5e4a23;
+  --color-violet-900: #3c301a;
+  --color-violet-950: #221b0f;
+
+  --color-fuchsia-50: #fbf7ec;
+  --color-fuchsia-100: #f5ecd6;
+  --color-fuchsia-200: #ebdcb2;
+  --color-fuchsia-300: #dec68a;
+  --color-fuchsia-400: #cfaf66;
+  --color-fuchsia-500: #be9a4c;
+  --color-fuchsia-600: #a3823d;
+  --color-fuchsia-700: #82662f;
+  --color-fuchsia-800: #5e4a23;
+  --color-fuchsia-900: #3c301a;
+  --color-fuchsia-950: #221b0f;
+
+  --color-pink-50: #fbf7ec;
+  --color-pink-100: #f5ecd6;
+  --color-pink-200: #ebdcb2;
+  --color-pink-300: #dec68a;
+  --color-pink-400: #cfaf66;
+  --color-pink-500: #be9a4c;
+  --color-pink-600: #a3823d;
+  --color-pink-700: #82662f;
+  --color-pink-800: #5e4a23;
+  --color-pink-900: #3c301a;
+  --color-pink-950: #221b0f;
+
+  /* =======================================================================
+     JADE - money in, success
+     ======================================================================= */
+  --color-emerald-50: #eef7f2;
+  --color-emerald-100: #d7ece0;
+  --color-emerald-200: #b0d9c4;
+  --color-emerald-300: #83c3a3;
+  --color-emerald-400: #58aa85;
+  --color-emerald-500: #3d8f6b;
+  --color-emerald-600: #2f7355;
+  --color-emerald-700: #275c46;
+  --color-emerald-800: #204738;
+  --color-emerald-900: #18332a;
+  --color-emerald-950: #0d1d18;
+
+  --color-green-50: #eef7f2;
+  --color-green-100: #d7ece0;
+  --color-green-200: #b0d9c4;
+  --color-green-300: #83c3a3;
+  --color-green-400: #58aa85;
+  --color-green-500: #3d8f6b;
+  --color-green-600: #2f7355;
+  --color-green-700: #275c46;
+  --color-green-800: #204738;
+  --color-green-900: #18332a;
+  --color-green-950: #0d1d18;
+
+  --color-teal-50: #eef7f2;
+  --color-teal-100: #d7ece0;
+  --color-teal-200: #b0d9c4;
+  --color-teal-300: #83c3a3;
+  --color-teal-400: #58aa85;
+  --color-teal-500: #3d8f6b;
+  --color-teal-600: #2f7355;
+  --color-teal-700: #275c46;
+  --color-teal-800: #204738;
+  --color-teal-900: #18332a;
+  --color-teal-950: #0d1d18;
+
+  --color-lime-50: #eef7f2;
+  --color-lime-100: #d7ece0;
+  --color-lime-200: #b0d9c4;
+  --color-lime-300: #83c3a3;
+  --color-lime-400: #58aa85;
+  --color-lime-500: #3d8f6b;
+  --color-lime-600: #2f7355;
+  --color-lime-700: #275c46;
+  --color-lime-800: #204738;
+  --color-lime-900: #18332a;
+  --color-lime-950: #0d1d18;
+
+  /* =======================================================================
+     CLAY - money out, danger
+     ======================================================================= */
+  --color-red-50: #fbf0ee;
+  --color-red-100: #f5ddd9;
+  --color-red-200: #e9bab4;
+  --color-red-300: #da958d;
+  --color-red-400: #c9736a;
+  --color-red-500: #b65950;
+  --color-red-600: #9a4740;
+  --color-red-700: #7c3934;
+  --color-red-800: #5e2c28;
+  --color-red-900: #42201d;
+  --color-red-950: #251110;
+
+  --color-rose-50: #fbf0ee;
+  --color-rose-100: #f5ddd9;
+  --color-rose-200: #e9bab4;
+  --color-rose-300: #da958d;
+  --color-rose-400: #c9736a;
+  --color-rose-500: #b65950;
+  --color-rose-600: #9a4740;
+  --color-rose-700: #7c3934;
+  --color-rose-800: #5e2c28;
+  --color-rose-900: #42201d;
+  --color-rose-950: #251110;
+
+  --color-orange-50: #fbf0ee;
+  --color-orange-100: #f5ddd9;
+  --color-orange-200: #e9bab4;
+  --color-orange-300: #da958d;
+  --color-orange-400: #c9736a;
+  --color-orange-500: #b65950;
+  --color-orange-600: #9a4740;
+  --color-orange-700: #7c3934;
+  --color-orange-800: #5e2c28;
+  --color-orange-900: #42201d;
+  --color-orange-950: #251110;
+
+  /* =======================================================================
+     BRASS - warning
+     ======================================================================= */
+  --color-amber-50: #faf5e8;
+  --color-amber-100: #f2e7cb;
+  --color-amber-200: #e5ce9b;
+  --color-amber-300: #d5b26c;
+  --color-amber-400: #c29a4c;
+  --color-amber-500: #a9833b;
+  --color-amber-600: #8b6a2f;
+  --color-amber-700: #6d5326;
+  --color-amber-800: #503d1d;
+  --color-amber-900: #372a15;
+  --color-amber-950: #1e170b;
+
+  --color-yellow-50: #faf5e8;
+  --color-yellow-100: #f2e7cb;
+  --color-yellow-200: #e5ce9b;
+  --color-yellow-300: #d5b26c;
+  --color-yellow-400: #c29a4c;
+  --color-yellow-500: #a9833b;
+  --color-yellow-600: #8b6a2f;
+  --color-yellow-700: #6d5326;
+  --color-yellow-800: #503d1d;
+  --color-yellow-900: #372a15;
+  --color-yellow-950: #1e170b;
+
+  /* =======================================================================
+     STEEL - information
+     ======================================================================= */
+  --color-cyan-50: #eff3f7;
+  --color-cyan-100: #dbe4ec;
+  --color-cyan-200: #b7c8d8;
+  --color-cyan-300: #8fa9c0;
+  --color-cyan-400: #6b8ba6;
+  --color-cyan-500: #52718b;
+  --color-cyan-600: #425b71;
+  --color-cyan-700: #37495a;
+  --color-cyan-800: #2c3946;
+  --color-cyan-900: #212a33;
+  --color-cyan-950: #12181d;
+
+  --color-sky-50: #eff3f7;
+  --color-sky-100: #dbe4ec;
+  --color-sky-200: #b7c8d8;
+  --color-sky-300: #8fa9c0;
+  --color-sky-400: #6b8ba6;
+  --color-sky-500: #52718b;
+  --color-sky-600: #425b71;
+  --color-sky-700: #37495a;
+  --color-sky-800: #2c3946;
+  --color-sky-900: #212a33;
+  --color-sky-950: #12181d;
+
+  --color-blue-50: #eff3f7;
+  --color-blue-100: #dbe4ec;
+  --color-blue-200: #b7c8d8;
+  --color-blue-300: #8fa9c0;
+  --color-blue-400: #6b8ba6;
+  --color-blue-500: #52718b;
+  --color-blue-600: #425b71;
+  --color-blue-700: #37495a;
+  --color-blue-800: #2c3946;
+  --color-blue-900: #212a33;
+  --color-blue-950: #12181d;
 }
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: var(--color-slate-950);
+  color: var(--color-slate-100);
+  font-family: var(--font-sans);
+  /* Money lines up column to column instead of jittering as digits change. */
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Page titles carry the serif; everything else stays in the grotesk. */
+h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+h2,
+h3,
+h4 {
+  letter-spacing: -0.015em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: rgba(207, 175, 102, 0.28);
+}
+
+/* ==========================================================================
+   ANIMATION
+   ========================================================================== */
 
 @keyframes fade-in {
   from {
@@ -38,20 +394,6 @@
   }
 }
 
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
-}
-
-:focus-visible {
-  outline: 2px solid var(--color-brand-indigo);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
 .animate-fade-in {
   animation: fade-in 0.2s ease-out;
 }
@@ -64,8 +406,13 @@ body,
   animation: slide-up 0.25s ease-out both;
 }
 
+/* ==========================================================================
+   SCROLLBAR - a hairline, not a coloured bar
+   ========================================================================== */
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -73,12 +420,17 @@ body,
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #4f46e5;
+  background: var(--color-slate-700);
   border-radius: 999px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #6366f1;
+  background: var(--color-slate-600);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-700) transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

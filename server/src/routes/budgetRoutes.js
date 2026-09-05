@@ -5,6 +5,8 @@ import {
   getBudgetByUser,
   updateBudget,
   deleteBudget,
+  getBudgetPlanning,
+  getBudgetDeleteImpact,
 } from "../controllers/budgetController.js";
 
 const budgetRoutes = express.Router();
@@ -19,6 +21,10 @@ budgetRoutes.get("/test", (req, res) => {
 budgetRoutes.post("/", createBudget);
 
 budgetRoutes.get("/user/:userId", getBudgetByUser);
+
+budgetRoutes.get("/planning/:userId", getBudgetPlanning);
+
+budgetRoutes.get("/:id/delete-impact", getBudgetDeleteImpact);
 
 budgetRoutes.put("/:id", updateBudget);
 

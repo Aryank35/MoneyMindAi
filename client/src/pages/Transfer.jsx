@@ -19,10 +19,18 @@ import {
 } from "../services/transferService";
 
 import { getUserId } from "../utils/auth";
+import { CHART_ACCENT } from "../utils/chartTheme";
 import { useToast } from "../components/common/Toast";
 import { PageLoader } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import ConfirmDialog from "../components/common/ConfirmDialog";
+
+const money = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 
 export default function Transfer() {
   const toast = useToast();
@@ -270,7 +278,7 @@ export default function Transfer() {
           >
             <div
               className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
-              style={{ backgroundColor: (account.color || "#6366F1") + "30" }}
+              style={{ backgroundColor: (account.color || CHART_ACCENT) + "30" }}
             >
               {account.icon || "🏦"}
             </div>
@@ -651,8 +659,16 @@ export default function Transfer() {
         isOpen={!!deleteTarget}
         onClose={() => (deleting ? null : setDeleteTarget(null))}
         onConfirm={confirmDeleteTransfer}
-        title="Delete transfer"
-        message="Are you sure you want to delete this transfer? This action cannot be undone."
+        title="Delete this transfer?"
+        message={
+          deleteTarget
+            ? `This permanently deletes the transfer of ${money(deleteTarget.amount)} and moves the money back: ${
+                getAccount(deleteTarget.fromAccountId)?.name || "the source account"
+              } is credited and ${
+                getAccount(deleteTarget.toAccountId)?.name || "the destination account"
+              } is debited. This cannot be undone.`
+            : ""
+        }
         confirmLabel="Delete"
         loading={deleting}
       />

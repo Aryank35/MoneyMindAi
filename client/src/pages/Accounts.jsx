@@ -7,7 +7,8 @@ import {
   getAccountsByUser,
   deleteAccount,
   updateAccount,
-  setSalaryAccount,
+  setAccountRole,
+  getAccountDeleteImpact,
 } from "../services/accountService";
 
 import { getUserId } from "../utils/auth";
@@ -17,6 +18,30 @@ import EmptyState from "../components/common/EmptyState";
 import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
+
+// The two exclusive account roles, described once and reused by the cards
+// and both modals. Adding another exclusive role means one entry here.
+const ROLE_DEFS = [
+  {
+    role: "isSalaryAccount",
+    label: "Salary Account",
+    holderOf: ({ salaryAccount }) => salaryAccount,
+    help: "Salary income on the income page is credited here.",
+  },
+  {
+    role: "isEpfAccount",
+    label: "EPF Account",
+    holderOf: ({ epfAccount }) => epfAccount,
+    help: "The EPF withheld from each salary entry accumulates here instead of your bank.",
+  },
+];
+
+const money = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 
 export default function Accounts() {
   const toast = useToast();
@@ -31,6 +56,10 @@ export default function Accounts() {
 
   const [deleteText, setDeleteText] = useState("");
 
+  const [deleteImpact, setDeleteImpact] = useState(null);
+
+  const [roleBusy, setRoleBusy] = useState(null);
+
   const [deleting, setDeleting] = useState(false);
 
   const [showEditModal, setShowEditModal] = useState(false);
@@ -44,33 +73,20 @@ export default function Accounts() {
     type: "Bank",
     balance: "",
     isSalaryAccount: false,
+    isEpfAccount: false,
   });
 
+  // One card treatment for every account type. The type reads through the
+  // icon and a single accent hairline rather than a different gradient each -
+  // seven competing gradients was the loudest thing on the page.
   const accountThemes = {
-    Bank: {
-      gradient: "from-blue-600 via-indigo-600 to-purple-700",
-      icon: "🏦",
-    },
-
-    Cash: {
-      gradient: "from-green-500 via-emerald-600 to-teal-700",
-      icon: "💵",
-    },
-
-    UPI: {
-      gradient: "from-orange-500 via-red-500 to-pink-600",
-      icon: "📱",
-    },
-
-    Wallet: {
-      gradient: "from-cyan-500 via-sky-600 to-blue-700",
-      icon: "👛",
-    },
-
-    "Credit Card": {
-      gradient: "from-slate-700 via-slate-800 to-black",
-      icon: "💳",
-    },
+    Bank: { accent: "bg-indigo-400/70", tint: "text-indigo-200", icon: "\ud83c\udfe6" },
+    Cash: { accent: "bg-emerald-400/70", tint: "text-emerald-200", icon: "\ud83d\udcb5" },
+    UPI: { accent: "bg-cyan-400/70", tint: "text-cyan-200", icon: "\ud83d\udcf1" },
+    Wallet: { accent: "bg-cyan-400/70", tint: "text-cyan-200", icon: "\ud83d\udc5b" },
+    "Credit Card": { accent: "bg-red-400/70", tint: "text-red-200", icon: "\ud83d\udcb3" },
+    Investment: { accent: "bg-indigo-400/70", tint: "text-indigo-200", icon: "\ud83d\udcc8" },
+    EPF: { accent: "bg-amber-400/70", tint: "text-amber-200", icon: "\ud83d\udee1\ufe0f" },
   };
 
   const loadAccounts = async () => {
@@ -113,6 +129,7 @@ export default function Accounts() {
         type: "Bank",
         balance: "",
         isSalaryAccount: false,
+        isEpfAccount: false,
       });
 
       setShowCreateModal(false);
@@ -130,6 +147,22 @@ export default function Accounts() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Pull the impact before opening the dialog so the warning can be specific
+  // about what deleting this account leaves orphaned.
+  const requestDelete = async (account) => {
+    setSelectedAccount(account);
+    setDeleteImpact(null);
+    setShowDeleteModal(true);
+
+    try {
+      const response = await getAccountDeleteImpact(account._id);
+
+      setDeleteImpact(response.data);
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -179,6 +212,7 @@ export default function Accounts() {
         type: "Bank",
         balance: "",
         isSalaryAccount: false,
+        isEpfAccount: false,
       });
 
       await loadAccounts();
@@ -193,21 +227,27 @@ export default function Accounts() {
     }
   };
 
-  const handleSetSalaryAccount = async (account) => {
-    if (account.isSalaryAccount) return;
+  const handleToggleRole = async (account, role, label, claim) => {
+    setRoleBusy(`${account._id}:${role}`);
 
     try {
-      await setSalaryAccount(account._id);
+      await setAccountRole(account._id, role, claim);
 
       await loadAccounts();
 
-      toast.success(`${account.name} is now your salary account`);
+      toast.success(
+        claim
+          ? `${account.name} is now your ${label}`
+          : `${account.name} is no longer your ${label}`,
+      );
     } catch (error) {
       console.error(error);
 
       toast.error(
-        error?.response?.data?.message || "Failed to set salary account",
+        error?.response?.data?.message || `Failed to update ${label}`,
       );
+    } finally {
+      setRoleBusy(null);
     }
   };
 
@@ -217,6 +257,10 @@ export default function Accounts() {
   );
 
   const salaryAccount = accounts.find((account) => account.isSalaryAccount);
+
+  const roleHolder = (role) => accounts.find((account) => account[role]);
+
+  const epfAccount = accounts.find((account) => account.isEpfAccount);
 
   return (
     <DashboardLayout>
@@ -229,29 +273,31 @@ export default function Accounts() {
           </p>
         </div>
 
-        <div
-          className="
-    rounded-3xl
-    p-8
-    mb-8
-    bg-gradient-to-r
-    from-indigo-600
-    via-purple-600
-    to-pink-600
-  "
-        >
-          <p className="opacity-80">Total Assets</p>
+        <div className="mb-8 overflow-hidden rounded-3xl border border-white/10 bg-slate-900 p-8">
+          <p className="text-sm uppercase tracking-[0.2em] text-slate-500">
+            Total Assets
+          </p>
 
-          <h2 className="text-5xl font-bold mt-3">
+          <h2 className="mt-3 text-5xl font-semibold tracking-tight text-white">
             ₹{totalAssets.toLocaleString()}
           </h2>
 
-          <p className="mt-3 opacity-80">Across {accounts.length} accounts</p>
+          <p className="mt-3 text-sm text-slate-400">
+            Across {accounts.length} account{accounts.length === 1 ? "" : "s"}
+          </p>
 
-          <p className="mt-2 text-sm opacity-90">
+          <div className="mt-5 h-px bg-white/10" />
+
+          <p className="mt-4 text-sm text-slate-400">
             {salaryAccount
-              ? `Salary is credited to ${salaryAccount.name} — the income page is linked to it.`
+              ? `Salary is credited to ${salaryAccount.name}.`
               : "No salary account linked yet. Mark one below so income entries land in the right place."}
+          </p>
+
+          <p className="mt-1 text-sm text-slate-400">
+            {epfAccount
+              ? `EPF accumulates in ${epfAccount.name}.`
+              : "No EPF account linked yet. EPF on salary entries will be recorded but not credited anywhere."}
           </p>
         </div>
 
@@ -290,63 +336,106 @@ export default function Accounts() {
                     hidden: { opacity: 0, y: 12 },
                     visible: { opacity: 1, y: 0 },
                   }}
-                  className={`
-            relative
-            overflow-hidden
-            rounded-2xl
-            p-6
-            bg-gradient-to-br
-            ${theme.gradient}
-            shadow-xl
-            hover:scale-[1.03]
-            transition-all
-          `}
+                  className="
+                    group relative overflow-hidden rounded-2xl border
+                    border-white/10 bg-slate-900 p-6 shadow-xl shadow-black/40
+                    transition-all duration-200
+                    hover:-translate-y-0.5 hover:border-white/20
+                  "
                 >
+                  <span
+                    className={`absolute inset-x-0 top-0 h-px ${theme.accent}`}
+                    aria-hidden="true"
+                  />
+
                   <div className="flex justify-between">
                     <div className="text-5xl">{theme.icon}</div>
 
-                    <div className="text-xs opacity-70">
+                    <div className="text-xs tracking-widest text-slate-500">
                       **** {String(account._id).slice(-4)}
                     </div>
                   </div>
 
                   <h2 className="mt-8 text-xl font-bold">{account.name}</h2>
 
-                  <p className="opacity-80">{account.type}</p>
+                  <p className={`text-sm ${theme.tint}`}>{account.type}</p>
 
-                  {account.isSalaryAccount && (
-                    <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-                      💰 Salary Account
-                    </span>
-                  )}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {account.isSalaryAccount && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-xs font-semibold text-indigo-200">
+                        Salary Account
+                      </span>
+                    )}
+                    {account.isEpfAccount && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">
+                        EPF Account
+                      </span>
+                    )}
+                  </div>
 
                   <h3 className="text-4xl font-bold mt-4">
                     ₹{Number(account.balance).toLocaleString()}
                   </h3>
 
                   <div className="mt-4">
-                    <div className="w-full h-2 bg-white/20 rounded-full">
+                    <div className="h-1 w-full rounded-full bg-white/10">
                       <div
-                        className="h-2 bg-white rounded-full"
+                        className={`h-1 rounded-full ${theme.accent}`}
                         style={{
                           width: `${allocation}%`,
                         }}
                       />
                     </div>
 
-                    <p className="text-xs mt-2">{allocation}% of assets</p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {allocation}% of assets
+                    </p>
                   </div>
 
                   <div className="mt-6 space-y-2">
-                    {!account.isSalaryAccount && (
-                      <button
-                        onClick={() => handleSetSalaryAccount(account)}
-                        aria-label={`Set ${account.name} as salary account`}
-                        className="w-full rounded-xl bg-white/10 py-2 transition hover:bg-white/20"
-                      >
-                        Set as Salary Account
-                      </button>
-                    )}
+                    {ROLE_DEFS.map(({ role, label, holderOf }) => {
+                      const holder = holderOf({ salaryAccount, epfAccount });
+                      const isHolder = Boolean(account[role]);
+                      // Taken by a different account - the role has to be
+                      // released there before it can be claimed here.
+                      const lockedBy = !isHolder ? holder : null;
+                      const busy = roleBusy === `${account._id}:${role}`;
+
+                      return (
+                        <button
+                          key={role}
+                          onClick={() =>
+                            handleToggleRole(account, role, label, !isHolder)
+                          }
+                          disabled={Boolean(lockedBy) || busy}
+                          title={
+                            lockedBy
+                              ? `${lockedBy.name} is currently your ${label}. Remove it there first.`
+                              : undefined
+                          }
+                          aria-label={
+                            lockedBy
+                              ? `${label} is already held by ${lockedBy.name}`
+                              : isHolder
+                                ? `Remove ${account.name} as ${label}`
+                                : `Set ${account.name} as ${label}`
+                          }
+                          className={`w-full rounded-xl border py-2 text-sm transition ${
+                            lockedBy
+                              ? "cursor-not-allowed border-white/5 bg-white/[0.02] text-slate-600"
+                              : isHolder
+                                ? "border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-slate-200"
+                                : "border-white/10 bg-white/5 text-slate-300 hover:border-white/20 hover:text-white"
+                          } disabled:cursor-not-allowed`}
+                        >
+                          {lockedBy
+                            ? `${label}: ${lockedBy.name}`
+                            : isHolder
+                              ? `Remove as ${label}`
+                              : `Set as ${label}`}
+                        </button>
+                      );
+                    })}
 
                     <button
                       onClick={() => {
@@ -357,24 +446,21 @@ export default function Accounts() {
                           type: account.type,
                           balance: account.balance,
                           isSalaryAccount: Boolean(account.isSalaryAccount),
+                          isEpfAccount: Boolean(account.isEpfAccount),
                         });
 
                         setShowEditModal(true);
                       }}
                       aria-label={`Edit ${account.name}`}
-                      className="w-full rounded-xl bg-white/10 py-2 transition hover:bg-white/20"
+                      className="w-full rounded-xl border border-white/10 bg-white/5 py-2 text-sm text-slate-300 transition hover:border-white/20 hover:text-white"
                     >
                       Edit
                     </button>
 
                     <button
-                      onClick={() => {
-                        setSelectedAccount(account);
-
-                        setShowDeleteModal(true);
-                      }}
+                      onClick={() => requestDelete(account)}
                       aria-label={`Delete ${account.name}`}
-                      className="w-full rounded-xl bg-red-500/20 py-2 text-red-200 transition hover:bg-red-500/30"
+                      className="w-full rounded-xl border border-red-500/20 bg-red-500/10 py-2 text-sm text-red-300 transition hover:border-red-500/40 hover:text-red-200"
                     >
                       Delete
                     </button>
@@ -417,7 +503,9 @@ export default function Accounts() {
               <option>Cash</option>
               <option>UPI</option>
               <option>Wallet</option>
+              <option>Investment</option>
               <option>Credit Card</option>
+              <option>EPF</option>
             </Select>
 
             <Input
@@ -433,26 +521,43 @@ export default function Accounts() {
               }
             />
 
-            <label className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={Boolean(formData.isSalaryAccount)}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    isSalaryAccount: e.target.checked,
-                  })
-                }
-              />
-              <span>
-                Salary Account
-                <span className="mt-1 block text-xs text-slate-500">
-                  Salary income on the income page is credited here. Only one
-                  account can hold this.
-                </span>
-              </span>
-            </label>
+            {ROLE_DEFS.map(({ role, label, help }) => {
+              const holder = roleHolder(role);
+              const lockedBy =
+                holder && String(holder._id) !== String("") ? holder : null;
+
+              return (
+                <label
+                  key={role}
+                  className={`flex items-start gap-3 rounded-xl border p-3 text-sm ${
+                    lockedBy
+                      ? "cursor-not-allowed border-slate-800 bg-slate-900 text-slate-500"
+                      : "border-slate-700 bg-slate-800 text-slate-300"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    disabled={Boolean(lockedBy)}
+                    checked={Boolean(formData[role]) && !lockedBy}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        [role]: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    {label}
+                    <span className="mt-1 block text-xs text-slate-500">
+                      {lockedBy
+                        ? `${lockedBy.name} already holds this. Remove the role from it first, then set it here.`
+                        : `${help} Only one account can hold this.`}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
@@ -478,7 +583,32 @@ export default function Accounts() {
         >
           <p className="text-slate-300">
             This will permanently delete{" "}
-            <span className="font-semibold">{selectedAccount?.name}</span>.
+            <span className="font-semibold">{selectedAccount?.name}</span>
+            {deleteImpact ? ` holding ${money(deleteImpact.balance)}` : ""}.
+          </p>
+
+          {deleteImpact?.hasLinkedRecords && (
+            <p className="mt-3 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">
+              {deleteImpact.incomeCount > 0 &&
+                `${deleteImpact.incomeCount} income entr${deleteImpact.incomeCount === 1 ? "y" : "ies"} worth ${money(deleteImpact.incomeTotal)}`}
+              {deleteImpact.incomeCount > 0 && deleteImpact.expenseCount > 0 && " and "}
+              {deleteImpact.expenseCount > 0 &&
+                `${deleteImpact.expenseCount} expense${deleteImpact.expenseCount === 1 ? "" : "s"}`}
+              {" "}point at this account. They are not deleted, but they will
+              reference an account that no longer exists.
+            </p>
+          )}
+
+          {(deleteImpact?.isSalaryAccount || deleteImpact?.isEpfAccount) && (
+            <p className="mt-3 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">
+              This is your{" "}
+              {deleteImpact.isSalaryAccount ? "salary" : "EPF"} account. Deleting
+              it unlinks it, and new entries will have nowhere to land until you
+              mark another.
+            </p>
+          )}
+
+          <p className="mt-3 text-slate-300">
             Type <span className="font-mono text-red-300">DELETE</span> to
             confirm.
           </p>
@@ -495,6 +625,7 @@ export default function Accounts() {
               variant="secondary"
               onClick={() => {
                 setDeleteText("");
+                setDeleteImpact(null);
 
                 setShowDeleteModal(false);
               }}
@@ -549,7 +680,9 @@ export default function Accounts() {
               <option>Cash</option>
               <option>UPI</option>
               <option>Wallet</option>
+              <option>Investment</option>
               <option>Credit Card</option>
+              <option>EPF</option>
             </Select>
 
             <Input
@@ -565,26 +698,43 @@ export default function Accounts() {
               }
             />
 
-            <label className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={Boolean(formData.isSalaryAccount)}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    isSalaryAccount: e.target.checked,
-                  })
-                }
-              />
-              <span>
-                Salary Account
-                <span className="mt-1 block text-xs text-slate-500">
-                  Salary income on the income page is credited here. Only one
-                  account can hold this.
-                </span>
-              </span>
-            </label>
+            {ROLE_DEFS.map(({ role, label, help }) => {
+              const holder = roleHolder(role);
+              const lockedBy =
+                holder && String(holder._id) !== String(editingAccount?._id || "") ? holder : null;
+
+              return (
+                <label
+                  key={role}
+                  className={`flex items-start gap-3 rounded-xl border p-3 text-sm ${
+                    lockedBy
+                      ? "cursor-not-allowed border-slate-800 bg-slate-900 text-slate-500"
+                      : "border-slate-700 bg-slate-800 text-slate-300"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    disabled={Boolean(lockedBy)}
+                    checked={Boolean(formData[role]) && !lockedBy}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        [role]: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    {label}
+                    <span className="mt-1 block text-xs text-slate-500">
+                      {lockedBy
+                        ? `${lockedBy.name} already holds this. Remove the role from it first, then set it here.`
+                        : `${help} Only one account can hold this.`}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
 
           <div className="flex justify-end gap-3 mt-6">

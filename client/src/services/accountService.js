@@ -18,10 +18,19 @@ export const updateAccount = async (id, data) => {
   return response.data;
 };
 
-export const setSalaryAccount = async (id) => {
+// Claims or releases an exclusive role ("isSalaryAccount" / "isEpfAccount").
+// Claiming one another account already holds is refused by the server.
+export const setAccountRole = async (id, role, value) => {
   const response = await api.put(`/accounts/${id}`, {
-    isSalaryAccount: true,
+    [role]: value,
   });
+
+  return response.data;
+};
+
+// What deleting this account leaves behind - shown in the confirmation.
+export const getAccountDeleteImpact = async (id) => {
+  const response = await api.get(`/accounts/${id}/delete-impact`);
 
   return response.data;
 };

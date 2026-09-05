@@ -166,28 +166,24 @@ export default function Sidebar({ closeSidebar, health }) {
           border-slate-800
         "
       >
-        <div
-          className="
-            rounded-2xl
-            bg-gradient-to-r
-            from-indigo-600
-            to-purple-600
-            p-4
-          "
-        >
-          <p className="text-xs opacity-80">Financial Health</p>
+        <div className="rounded-2xl border border-white/10 bg-slate-900 p-4">
+          <p className="text-xs uppercase tracking-[0.15em] text-slate-500">
+            Financial Health
+          </p>
 
-          <h3 className="text-xl font-bold mt-1">{healthLabel}</h3>
+          <h3 className="mt-1 text-xl font-semibold text-indigo-200">
+            {healthLabel}
+          </h3>
 
           <div className="mt-3">
-            <div className="w-full h-2 bg-white/20 rounded-full">
+            <div className="h-1 w-full rounded-full bg-white/10">
               <div
-                className="h-2 rounded-full bg-white transition-all duration-300"
+                className="h-1 rounded-full bg-indigo-400 transition-all duration-300"
                 style={{ width: `${health?.score ?? 0}%` }}
               />
             </div>
 
-            <p className="text-xs mt-2">
+            <p className="mt-2 text-xs text-slate-400">
               {health ? health.message : "Calculating your score..."}
             </p>
           </div>

@@ -21,6 +21,11 @@ export const SIDEBAR_MENU = [
     icon: FiDollarSign,
   },
   {
+    label: "Transfer",
+    path: "/transfer",
+    icon: FiRepeat,
+  },
+  {
     label: "Budget",
     path: "/budget",
     icon: FiTarget,
@@ -49,10 +54,5 @@ export const SIDEBAR_MENU = [
     label: "Accounts",
     path: "/accounts",
     icon: FiCreditCard,
-  },
-  {
-    label: "Transfer",
-    path: "/transfer",
-    icon: FiRepeat,
   },
 ];

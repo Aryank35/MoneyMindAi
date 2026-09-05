@@ -4,14 +4,20 @@ import {
   FiTarget,
   FiTrendingUp,
   FiAlertTriangle,
+  FiArrowRight,
+  FiTrash2,
   FiX,
 } from "react-icons/fi";
 import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 
 import {
   getBudgetByUser,
   createBudget,
   updateBudget,
+  deleteBudget,
+  getBudgetPlanning,
+  getBudgetDeleteImpact,
 } from "../services/budgetService";
 
 import { getAccountsByUser } from "../services/accountService";
@@ -26,6 +32,8 @@ import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import { useToast } from "../components/common/Toast";
 import CategoryProgressBar from "../components/common/CategoryProgressBar";
+import ConfirmDialog from "../components/common/ConfirmDialog";
+import { money } from "../utils/incomeFormulas";
 
 // =========================
 // MONTH HELPERS
@@ -75,6 +83,14 @@ export default function Budget() {
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
+  // Budgetable income for the month, from the income page.
+  const [planning, setPlanning] = useState(null);
+
+  // One dialog drives every destructive action on this page - nothing is
+  // removed without an explicit confirmation.
+  const [confirmState, setConfirmState] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
   const [budgetForm, setBudgetForm] = useState({
     month: getDefaultMonth(),
     totalBudget: "",
@@ -92,11 +108,75 @@ export default function Budget() {
     }));
   };
 
-  const handleRemoveCategory = (index) => {
+  const removeCategoryAt = (index) => {
     setBudgetForm((prev) => ({
       ...prev,
       categories: prev.categories.filter((_, i) => i !== index),
     }));
+  };
+
+  // Only asks when there is something to lose - blank rows just go.
+  const handleRemoveCategory = (index) => {
+    const category = budgetForm.categories[index];
+    const isEmpty = !category?.name?.trim() && !Number(category?.limit);
+
+    if (isEmpty) {
+      removeCategoryAt(index);
+      return;
+    }
+
+    setConfirmState({
+      title: "Remove this category?",
+      message: `"${category.name || "Untitled"}" with a limit of ${money(category.limit)} will be removed from the budget form. Nothing is saved until you save the budget.`,
+      confirmLabel: "Remove",
+      onConfirm: () => {
+        removeCategoryAt(index);
+        setConfirmState(null);
+      },
+    });
+  };
+
+  // Deleting the whole budget - the impact is fetched first so the dialog
+  // can say exactly what goes.
+  const requestDeleteBudget = async () => {
+    if (!budget?._id) return;
+
+    setConfirmState({
+      title: "Delete this budget?",
+      message: "Loading what this removes...",
+      confirmLabel: "Delete budget",
+      onConfirm: () => handleDeleteBudget(),
+    });
+
+    try {
+      const response = await getBudgetDeleteImpact(budget._id);
+      const impact = response.data;
+
+      setConfirmState({
+        title: `Delete the ${impact.month} budget?`,
+        message: `This removes the plan of ${money(impact.totalBudget)} across ${impact.categoryCount} categor${impact.categoryCount === 1 ? "y" : "ies"}. Your recorded expenses and income are not touched - only the plan is deleted. This cannot be undone.`,
+        confirmLabel: "Delete budget",
+        onConfirm: () => handleDeleteBudget(),
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDeleteBudget = async () => {
+    try {
+      setConfirmBusy(true);
+      await deleteBudget(budget._id);
+      toast.success("Budget deleted");
+      setConfirmState(null);
+      setBudget(null);
+      await loadData();
+    } catch (error) {
+      console.error(error);
+      toast.error(error?.response?.data?.message || "Failed to delete budget");
+    } finally {
+      setConfirmBusy(false);
+    }
   };
 
   const handleCategoryChange = (index, field, value) => {
@@ -127,13 +207,20 @@ export default function Budget() {
       getBudgetByUser(userId),
       getExpensesByUser(userId),
       getAccountsByUser(userId),
+      getBudgetPlanning(userId),
     ]);
   }
 
   // Applies a fetchBudgetData() result to state.
-  function applyBudgetData([budgetResponse, expenseResponse, accountResponse]) {
+  function applyBudgetData([
+    budgetResponse,
+    expenseResponse,
+    accountResponse,
+    planningResponse,
+  ]) {
     setAccounts(accountResponse?.data || []);
     setExpenses(expenseResponse?.data || []);
+    setPlanning(planningResponse?.data || null);
 
     const currentBudget = budgetResponse?.data?.[0] || null;
 
@@ -224,7 +311,10 @@ export default function Budget() {
   const openBudgetModal = () => {
     setBudgetForm({
       month: budget?.month || getDefaultMonth(),
-      totalBudget: budget?.totalBudget || "",
+      // A new budget starts from what income actually supports; an existing
+      // one keeps whatever the user already set.
+      totalBudget:
+        budget?.totalBudget || planning?.suggestedTotalBudget || "",
       categories:
         budget?.categories?.length > 0
           ? budget.categories.map((item) => ({
@@ -472,6 +562,17 @@ export default function Budget() {
     };
   });
 
+  const budgetableIncome = Number(planning?.income?.budgetable || 0);
+
+  // Over-allocation is a warning, not a block: planning ahead of recorded
+  // income is legitimate.
+  const isOverIncome = budgetableIncome > 0 && totalBudget > budgetableIncome;
+
+  const incomeCoverage =
+    totalBudget > 0
+      ? Math.round((budgetableIncome / totalBudget) * 100)
+      : 0;
+
   const totalCategoryLimit = budgetForm.categories.reduce(
     (sum, item) => sum + Number(item.limit || 0),
     0,
@@ -502,9 +603,100 @@ export default function Budget() {
           </p>
         </div>
 
-        <Button variant="primary" icon={FiPlus} onClick={openBudgetModal}>
-          {budget?._id ? "Update Budget" : "Create Budget"}
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="primary" icon={FiPlus} onClick={openBudgetModal}>
+            {budget?._id ? "Update Budget" : "Create Budget"}
+          </Button>
+
+          {budget?._id && (
+            <Button
+              variant="danger"
+              icon={FiTrash2}
+              onClick={requestDeleteBudget}
+            >
+              Delete
+            </Button>
+          )}
+        </div>
+      </motion.div>
+
+      {/* Income -> Budget: the plan is built on recorded income */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5"
+      >
+        {budgetableIncome > 0 ? (
+          <div className="flex flex-wrap items-center gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                Income received
+              </p>
+              <p className="text-xl font-bold">
+                {money(planning?.income?.received)}
+              </p>
+            </div>
+
+            <FiArrowRight className="text-slate-600" />
+
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                Available to budget
+              </p>
+              <p className="text-xl font-bold text-green-400">
+                {money(budgetableIncome)}
+              </p>
+            </div>
+
+            {planning?.income?.excluded > 0 && (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Excluded by you
+                </p>
+                <p className="text-xl font-bold text-slate-400">
+                  {money(planning.income.excluded)}
+                </p>
+              </div>
+            )}
+
+            <div className="ml-auto flex flex-wrap gap-2">
+              {(planning?.income?.bySource || []).map((row) => (
+                <span
+                  key={row.key}
+                  className="rounded-full bg-white/10 px-3 py-1 text-xs"
+                  title={`${row.label}: ${money(row.received)} received`}
+                >
+                  {row.icon} {row.label} {money(row.budgetable)}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="flex items-start gap-2 text-sm text-amber-200">
+              <FiAlertTriangle className="mt-0.5 shrink-0" />
+              No budgetable income recorded for this month yet. Budgets are
+              planned against income, so start there.
+            </p>
+            <Link
+              to="/income"
+              className="rounded-xl bg-green-500 px-4 py-2 font-semibold text-slate-950 transition-colors hover:bg-green-400"
+            >
+              Add income first
+            </Link>
+          </div>
+        )}
+
+        {isOverIncome && (
+          <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">
+            <FiAlertTriangle className="mt-0.5 shrink-0" />
+            This budget of {money(totalBudget)} is {money(totalBudget - budgetableIncome)}{" "}
+            more than the {money(budgetableIncome)} of income recorded for this
+            month ({incomeCoverage}% covered). That is allowed - just make sure
+            the rest is actually coming.
+          </p>
+        )}
       </motion.div>
 
       {/* Summary Cards */}
@@ -518,10 +710,10 @@ export default function Budget() {
             valueClassName: "",
           },
           {
-            label: "Total Assets",
-            value: totalAssets,
-            className: "bg-cyan-500/10 border border-cyan-500/20",
-            valueClassName: "text-cyan-400",
+            label: "Budgetable Income",
+            value: budgetableIncome,
+            className: "bg-green-500/10 border border-green-500/20",
+            valueClassName: "text-green-400",
           },
           {
             label: "Total Spent",
@@ -688,19 +880,54 @@ export default function Budget() {
             }
           />
 
-          <Input
-            type="number"
-            label="Total Budget"
-            id="budget-total"
-            placeholder="Total Budget"
-            value={budgetForm.totalBudget}
-            onChange={(e) =>
-              setBudgetForm((prev) => ({
-                ...prev,
-                totalBudget: e.target.value,
-              }))
-            }
-          />
+          <div>
+            <Input
+              type="number"
+              label="Total Budget"
+              id="budget-total"
+              placeholder="Total Budget"
+              value={budgetForm.totalBudget}
+              onChange={(e) =>
+                setBudgetForm((prev) => ({
+                  ...prev,
+                  totalBudget: e.target.value,
+                }))
+              }
+            />
+
+            {budgetableIncome > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-slate-500">
+                  {money(budgetableIncome)} of income available.
+                </span>
+                {Number(budgetForm.totalBudget || 0) !== budgetableIncome && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBudgetForm((prev) => ({
+                        ...prev,
+                        totalBudget: budgetableIncome,
+                      }))
+                    }
+                    className="rounded-lg bg-green-500/15 px-2 py-1 font-semibold text-green-300 transition hover:bg-green-500/25"
+                  >
+                    Match income
+                  </button>
+                )}
+              </div>
+            )}
+
+            {budgetableIncome > 0 &&
+              Number(budgetForm.totalBudget || 0) > budgetableIncome && (
+                <p className="mt-2 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-200">
+                  <FiAlertTriangle className="mt-0.5 shrink-0" />
+                  {money(
+                    Number(budgetForm.totalBudget) - budgetableIncome,
+                  )}{" "}
+                  more than your recorded income. You can still save this.
+                </p>
+              )}
+          </div>
         </div>
 
         {/* Categories */}
@@ -897,6 +1124,16 @@ export default function Budget() {
           </div>
         </div>
       </motion.div>
+
+      <ConfirmDialog
+        isOpen={!!confirmState}
+        onClose={() => setConfirmState(null)}
+        onConfirm={() => confirmState?.onConfirm?.()}
+        title={confirmState?.title}
+        message={confirmState?.message}
+        confirmLabel={confirmState?.confirmLabel || "Remove"}
+        loading={confirmBusy}
+      />
     </DashboardLayout>
   );
 }

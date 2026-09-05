@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FiX } from "react-icons/fi";
 
+const FOCUSABLE =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export default function Modal({
   isOpen,
   onClose,
@@ -11,6 +14,16 @@ export default function Modal({
 }) {
   const panelRef = useRef(null);
 
+  // Every caller passes an inline arrow for onClose, so its identity changes
+  // on each parent render. Keeping it in a ref lets the effect below depend
+  // on isOpen alone - with onClose in the dependency array, typing a single
+  // character re-ran the whole effect and pulled focus out of the field.
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!isOpen) return undefined;
 
@@ -18,7 +31,7 @@ export default function Modal({
 
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
-        onClose?.();
+        onCloseRef.current?.();
 
         return;
       }
@@ -27,9 +40,7 @@ export default function Modal({
         return;
       }
 
-      const focusable = panelRef.current.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
+      const focusable = panelRef.current.querySelectorAll(FOCUSABLE);
 
       if (focusable.length === 0) {
         return;
@@ -49,24 +60,28 @@ export default function Modal({
 
     document.addEventListener("keydown", handleKeyDown);
 
-    const firstFocusable = panelRef.current?.querySelector(
-      "button, input, select, textarea",
+    // Land on the first real field. The close button comes first in DOM
+    // order, so querying focusables generically would focus that instead.
+    const panel = panelRef.current;
+
+    const firstField = panel?.querySelector(
+      "input:not([type='hidden']), select, textarea",
     );
 
-    firstFocusable?.focus();
+    (firstField || panel?.querySelector("button"))?.focus();
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
 
       previouslyFocused?.focus?.();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -89,14 +104,14 @@ export default function Modal({
             transition={{ duration: 0.18 }}
           >
             {title && (
-              <div className="flex items-center justify-between mb-5 gap-4">
-                <h2 className="text-xl font-semibold">{title}</h2>
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
 
                 <button
                   type="button"
                   onClick={onClose}
                   aria-label="Close dialog"
-                  className="rounded-lg bg-slate-800 hover:bg-slate-700 p-2 transition-colors shrink-0"
+                  className="shrink-0 rounded-lg bg-slate-800 p-2 transition-colors hover:bg-slate-700"
                 >
                   <FiX size={18} />
                 </button>

@@ -22,6 +22,11 @@ import EmptyState from "../components/common/EmptyState";
 import { getDashboardData } from "../services/dashboardService";
 import { getUserId } from "../utils/auth";
 import {
+  CHART_ACCENT,
+  CHART_AXIS,
+  TOOLTIP_STYLE,
+} from "../utils/chartTheme";
+import {
   computeFinancialHealth,
   getHealthLabel,
   getHealthTone,
@@ -324,15 +329,17 @@ export default function Dashboard() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-600/30 via-purple-600/20 to-cyan-600/20 p-8 backdrop-blur-xl mb-6"
+        className="relative mb-6 overflow-hidden rounded-3xl border border-white/10 bg-slate-900 p-8"
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.3),transparent_40%)]" />
+        {/* Arbitrary values bypass the theme, so this one carries the gold
+            accent literally. Kept faint - it is a wash, not a fill. */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(207,175,102,0.10),transparent_55%)]" />
 
         <div className="relative z-10 flex flex-col lg:flex-row justify-between gap-6">
           <div>
             <p className="text-slate-400">{getGreeting()}</p>
 
-            <h1 className="text-5xl font-bold mt-2">
+            <h1 className="mt-2 text-5xl">
               Hey {currentUser?.name?.split(" ")[0]} 👋
             </h1>
 
@@ -574,8 +581,8 @@ export default function Dashboard() {
                     x2="0"
                     y2="1"
                   >
-                    <stop offset="0%" stopColor="#818cf8" stopOpacity={0.9} />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.4} />
+                    <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.9} />
+                    <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0.4} />
                   </linearGradient>
                 </defs>
 
@@ -583,20 +590,15 @@ export default function Dashboard() {
 
                 <XAxis
                   dataKey="day"
-                  stroke="#64748b"
+                  stroke={CHART_AXIS}
                   fontSize={12}
                   tickLine={false}
                 />
 
-                <YAxis stroke="#64748b" fontSize={12} tickLine={false} />
+                <YAxis stroke={CHART_AXIS} fontSize={12} tickLine={false} />
 
                 <Tooltip
-                  contentStyle={{
-                    background: "#0f172a",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: 12,
-                    color: "#e2e8f0",
-                  }}
+                  contentStyle={TOOLTIP_STYLE}
                   formatter={(value) => [
                     `₹${Number(value).toLocaleString()}`,
                     "Spent",

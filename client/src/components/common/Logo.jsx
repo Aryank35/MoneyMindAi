@@ -9,9 +9,9 @@ export default function Logo({ size = "md", className = "" }) {
     <div
       className={`
         ${SIZES[size] || SIZES.md}
-        flex items-center justify-center font-bold text-white shrink-0
-        bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500
-        shadow-lg shadow-purple-500/20
+        flex shrink-0 items-center justify-center font-semibold text-slate-950
+        bg-gradient-to-br from-indigo-300 to-indigo-500
+        shadow-lg shadow-black/40
         ${className}
       `}
       aria-hidden="true"

@@ -1,11 +1,16 @@
 import { forwardRef } from "react";
 import { FiLoader } from "react-icons/fi";
 
+// Gold is light enough that white text on it fails contrast - primary
+// actions carry near-black text instead, which also reads more premium.
 const VARIANTS = {
-  primary: "bg-indigo-600 hover:bg-indigo-500 text-white",
-  secondary: "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700",
+  primary:
+    "bg-indigo-400 hover:bg-indigo-300 text-slate-950 font-semibold shadow-lg shadow-black/30",
+  secondary:
+    "bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700",
   danger: "bg-red-600 hover:bg-red-500 text-white",
-  ghost: "bg-transparent hover:bg-white/10 text-slate-200 border border-white/10",
+  ghost:
+    "bg-transparent hover:bg-white/5 text-slate-200 border border-white/10",
 };
 
 const SIZES = {

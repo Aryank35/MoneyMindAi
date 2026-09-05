@@ -1,17 +1,15 @@
 import DashboardLayout from "../components/layout/DashboardLayout";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
   FiAlertTriangle,
-  FiCalendar,
+  FiArrowRight,
   FiCheckCircle,
   FiCreditCard,
-  FiClock,
   FiEdit2,
-  FiFilter,
   FiInbox,
-  FiPieChart,
+  FiLock,
   FiPlus,
   FiSearch,
   FiTrash2,
@@ -20,11 +18,7 @@ import {
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -42,96 +36,32 @@ import { Skeleton } from "../components/common/Loader";
 import { useToast } from "../components/common/Toast";
 
 import {
+  getIncomeSources,
   getIncomesByUser,
+  getIncomeSummary,
+  getIncomeDeleteImpact,
   createIncome,
   updateIncome,
   deleteIncome,
 } from "../services/incomeService";
 import { getAccountsByUser } from "../services/accountService";
 import { getUserId } from "../utils/auth";
-
-const incomeSources = [
-  "Salary",
-  "Business",
-  "Freelancing",
-  "Rental",
-  "Investments",
-  "Interest",
-  "Bonus",
-  "Dividend",
-  "Gift",
-  "Other",
-];
+import {
+  CHART_AXIS,
+  CHART_COLORS,
+  CHART_INFO,
+  CHART_POSITIVE,
+  TOOLTIP_STYLE,
+} from "../utils/chartTheme";
+import {
+  computeIncomeTotals,
+  money,
+  monthNames,
+} from "../utils/incomeFormulas";
 
 const paymentModes = ["Bank Transfer", "Cash", "UPI", "Cheque", "Card"];
 const recurringTypes = ["Monthly", "Quarterly", "Yearly", "Weekly", "Daily"];
-const monthNames = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-const chartColors = ["#22c55e", "#38bdf8", "#a78bfa", "#f59e0b", "#f472b6"];
 
-const createEmptyForm = () => {
-  const now = new Date();
-
-  return {
-    source: "Salary",
-    category: "Salary",
-    amount: "",
-    note: "",
-    date: now.toISOString().split("T")[0],
-    time: now.toTimeString().slice(0, 5),
-    accountId: "",
-    paymentMode: "Bank Transfer",
-    employer: "",
-    isRecurring: true,
-    recurringType: "Monthly",
-    salaryMonth: now.getMonth() + 1,
-    salaryYear: now.getFullYear(),
-    grossSalary: "",
-    basic: "",
-    hra: "",
-    specialAllowance: "",
-    variablePay: "",
-    bonus: "",
-    pf: "",
-    professionalTax: "",
-    incomeTax: "",
-    insurance: "",
-    tds: "0",
-    netSalary: "",
-    attachments: "",
-  };
-};
-
-const money = (value) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0));
-
-const shortMoney = (value) =>
-  new Intl.NumberFormat("en-IN", {
-    notation: "compact",
-    compactDisplay: "short",
-    maximumFractionDigits: 1,
-  }).format(Number(value || 0));
-
-const toNumber = (value) => Number(value || 0);
-
-const getIncomeAmount = (income) =>
-  Number(income.netSalary || income.amount || 0);
 
 const formatDate = (date) =>
   date
@@ -142,70 +72,92 @@ const formatDate = (date) =>
       })
     : "-";
 
-const formatDayMonth = (date) =>
-  date
-    ? new Date(date).toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "long",
-      })
-    : "-";
+// Blank entry for a source: every declared field starts empty, and the
+// budget toggle starts wherever the registry says it should.
+const createEmptyForm = (source, accountId = "") => {
+  const now = new Date();
 
-const getRecurringDay = (income) => {
-  if (income.source === "Salary" && income.salaryMonth && income.salaryYear) {
-    return new Date(
-      Number(income.salaryYear),
-      Number(income.salaryMonth) - 1,
-      new Date(income.incomeDate).getDate(),
-    );
-  }
-
-  return income.incomeDate ? new Date(income.incomeDate) : null;
+  return {
+    sourceKey: source?.key || "salary",
+    fields: (source?.fields || []).reduce(
+      (values, field) => ({ ...values, [field.key]: "" }),
+      {},
+    ),
+    accountId,
+    includeInBudget: source?.includeInBudgetDefault ?? true,
+    payer: "",
+    note: "",
+    attachments: "",
+    paymentMode: "Bank Transfer",
+    isRecurring: Boolean(source?.isRecurringDefault),
+    recurringType: "Monthly",
+    date: now.toISOString().split("T")[0],
+    time: now.toTimeString().slice(0, 5),
+    periodMonth: now.getMonth() + 1,
+    periodYear: now.getFullYear(),
+  };
 };
 
-// Shared label + input/select wrapper used across the add/edit modal so the
-// same 3-part markup (label, field, wrapper) isn't hand-rolled per field.
 function FormField({
   label,
   type = "text",
   options,
   placeholder,
   containerClassName,
-  className,
+  help,
   ...props
 }) {
-  if (type === "select") {
-    return (
-      <Select
-        label={label}
-        className={className}
-        containerClassName={containerClassName}
-        {...props}
-      >
+  const field =
+    type === "select" ? (
+      <Select label={label} containerClassName={containerClassName} {...props}>
         {placeholder && <option value="">{placeholder}</option>}
         {(options || []).map((option) => {
           const isObject = typeof option === "object" && option !== null;
           const value = isObject ? option.value : option;
-          const optionLabel = isObject ? option.label : option;
 
           return (
             <option key={value} value={value}>
-              {optionLabel}
+              {isObject ? option.label : option}
             </option>
           );
         })}
       </Select>
+    ) : (
+      <Input
+        label={label}
+        type={type}
+        placeholder={placeholder}
+        containerClassName={containerClassName}
+        {...props}
+      />
     );
-  }
+
+  if (!help) return field;
 
   return (
-    <Input
-      label={label}
-      type={type}
-      placeholder={placeholder}
-      className={className}
-      containerClassName={containerClassName}
-      {...props}
-    />
+    <div className={containerClassName}>
+      {field}
+      <p className="mt-1 text-xs text-slate-500">{help}</p>
+    </div>
+  );
+}
+
+function StatTile({ label, value, hint, tone = "default" }) {
+  const tones = {
+    default: "text-white",
+    positive: "text-emerald-300",
+    muted: "text-slate-300",
+    warning: "text-amber-300",
+  };
+
+  return (
+    <div className="rounded-xl bg-slate-800/80 p-4">
+      <p className="text-sm text-slate-400">{label}</p>
+      <p className={`mt-1 break-words text-2xl font-bold ${tones[tone]}`}>
+        {value}
+      </p>
+      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+    </div>
   );
 }
 
@@ -213,24 +165,31 @@ export default function Income() {
   const toast = useToast();
   const shouldReduceMotion = useReducedMotion();
 
+  const [sources, setSources] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+
   const [showModal, setShowModal] = useState(false);
   const [editingIncome, setEditingIncome] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState(() => createEmptyForm(null));
+
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteImpact, setDeleteImpact] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [formData, setFormData] = useState(createEmptyForm);
-  // Snapshot of the on-page draft while the edit modal borrows formData.
-  const salaryDraftRef = useRef(null);
+
+  const now = new Date();
+  const [period, setPeriod] = useState({
+    month: now.getMonth() + 1,
+    year: now.getFullYear(),
+  });
+
   const [filters, setFilters] = useState({
-    month: "all",
-    year: "all",
+    sourceKey: "all",
     account: "all",
-    source: "all",
-    paymentMode: "all",
-    recurring: "all",
+    budget: "all",
     search: "",
   });
 
@@ -243,30 +202,21 @@ export default function Income() {
           transition: { duration: 0.4, delay, ease: "easeOut" },
         };
 
-  const loadIncomePage = async () => {
+  const loadPage = async (nextPeriod = period) => {
     try {
       const userId = getUserId();
-      const [incomeResponse, accountResponse] = await Promise.all([
+
+      const [sourceRes, incomeRes, accountRes, summaryRes] = await Promise.all([
+        getIncomeSources(),
         getIncomesByUser(userId),
         getAccountsByUser(userId),
+        getIncomeSummary(userId, nextPeriod),
       ]);
 
-      const loadedAccounts = accountResponse.data || [];
-
-      setIncomes(incomeResponse.data || []);
-      setAccounts(loadedAccounts);
-      const linkedSalaryAccount = loadedAccounts.find(
-        (account) => account.isSalaryAccount,
-      );
-
-      setFormData((prev) => ({
-        ...prev,
-        accountId:
-          prev.accountId ||
-          linkedSalaryAccount?._id ||
-          loadedAccounts[0]?._id ||
-          "",
-      }));
+      setSources(sourceRes.data || []);
+      setIncomes(incomeRes.data || []);
+      setAccounts(accountRes.data || []);
+      setSummary(summaryRes.data || null);
     } catch (error) {
       console.error(error);
       toast.error("Failed to load income data");
@@ -275,14 +225,29 @@ export default function Income() {
     }
   };
 
+  // Deferred a tick so the fetch's setState lands outside the effect body,
+  // matching how the other pages in this app kick off their loads.
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      loadIncomePage();
+      loadPage(period);
     }, 0);
 
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [period.month, period.year]);
+
+  // =====================================================================
+  // DERIVED
+  // =====================================================================
+
+  const sourceMap = useMemo(
+    () =>
+      sources.reduce((map, source) => {
+        map[source.key] = source;
+        return map;
+      }, {}),
+    [sources],
+  );
 
   const accountMap = useMemo(
     () =>
@@ -293,299 +258,19 @@ export default function Income() {
     [accounts],
   );
 
-  // The account flagged on the Accounts page is the one salary is credited to.
-  const salaryAccount = useMemo(
-    () => accounts.find((account) => account.isSalaryAccount) || null,
-    [accounts],
+  const salaryAccount = accounts.find((account) => account.isSalaryAccount);
+  const epfAccount = accounts.find((account) => account.isEpfAccount);
+
+  const activeSource = sourceMap[formData.sourceKey] || null;
+
+  // Live preview only. The server recomputes these on save and its numbers
+  // are what get stored.
+  const previewTotals = useMemo(
+    () => computeIncomeTotals(activeSource, formData.fields),
+    [activeSource, formData.fields],
   );
 
-  const defaultAccountId = salaryAccount?._id || accounts[0]?._id || "";
-
-  const salaryTotals = useMemo(() => {
-    const additions =
-      toNumber(formData.basic) +
-      toNumber(formData.hra) +
-      toNumber(formData.specialAllowance) +
-      toNumber(formData.variablePay) +
-      toNumber(formData.bonus);
-    const gross = toNumber(formData.grossSalary) || additions;
-    const deductions =
-      toNumber(formData.pf) +
-      toNumber(formData.professionalTax) +
-      toNumber(formData.incomeTax) +
-      toNumber(formData.insurance) +
-      toNumber(formData.tds);
-    const net = Math.max(gross - deductions, 0);
-
-    return { gross, deductions, net };
-  }, [formData]);
-
-  const selectedDepositAccount = accountMap[formData.accountId];
-  const depositAmount =
-    formData.source === "Salary"
-      ? salaryTotals.net
-      : toNumber(formData.amount);
-  const balanceAfterCredit =
-    toNumber(selectedDepositAccount?.balance) + depositAmount;
-
-  const filteredIncomes = useMemo(
-    () =>
-      incomes.filter((income) => {
-        const date = new Date(income.incomeDate);
-        const accountName =
-          accountMap[income.accountId]?.name || income.accountName || "";
-        const searchTarget = [
-          income.source,
-          income.category,
-          income.note,
-          income.employer,
-          accountName,
-          income.paymentMode,
-        ]
-          .join(" ")
-          .toLowerCase();
-
-        return (
-          (filters.month === "all" ||
-            date.getMonth() + 1 === Number(filters.month)) &&
-          (filters.year === "all" ||
-            date.getFullYear() === Number(filters.year)) &&
-          (filters.account === "all" || income.accountId === filters.account) &&
-          (filters.source === "all" || income.source === filters.source) &&
-          (filters.paymentMode === "all" ||
-            income.paymentMode === filters.paymentMode) &&
-          (filters.recurring === "all" ||
-            String(Boolean(income.isRecurring)) === filters.recurring) &&
-          searchTarget.includes(filters.search.toLowerCase())
-        );
-      }),
-    [accountMap, filters, incomes],
-  );
-
-  const analytics = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const salaryEntries = incomes
-      .filter((income) => income.source === "Salary")
-      .sort((a, b) => new Date(b.incomeDate) - new Date(a.incomeDate));
-    const totalIncome = incomes.reduce(
-      (sum, income) => sum + getIncomeAmount(income),
-      0,
-    );
-    const monthlyIncome = incomes
-      .filter((income) => {
-        const date = new Date(income.incomeDate);
-        return (
-          date.getMonth() === currentMonth && date.getFullYear() === currentYear
-        );
-      })
-      .reduce((sum, income) => sum + getIncomeAmount(income), 0);
-    const recurringIncome = incomes
-      .filter((income) => income.isRecurring)
-      .reduce((sum, income) => sum + getIncomeAmount(income), 0);
-    const passiveIncome = incomes
-      .filter((income) =>
-        ["Rental", "Investments", "Interest", "Dividend"].includes(
-          income.source,
-        ),
-      )
-      .reduce((sum, income) => sum + getIncomeAmount(income), 0);
-    const salaryIncome = incomes
-      .filter((income) => income.source === "Salary")
-      .reduce((sum, income) => sum + getIncomeAmount(income), 0);
-    const variableIncome = incomes
-      .filter((income) => !income.isRecurring || income.source === "Bonus")
-      .reduce((sum, income) => sum + getIncomeAmount(income), 0);
-    const averageMonthlyIncome = incomes.length
-      ? Math.round(totalIncome / Math.max(new Set(incomes.map((income) => {
-          const date = new Date(income.incomeDate);
-          return `${date.getFullYear()}-${date.getMonth()}`;
-        })).size, 1))
-      : 0;
-    const salaryDependency = totalIncome
-      ? Math.round((salaryIncome / totalIncome) * 100)
-      : 0;
-    const sourceCount = new Set(incomes.map((income) => income.source)).size;
-    const diversificationScore = Math.min(10, sourceCount * 1.7).toFixed(1);
-    const annualIncome = Math.max(averageMonthlyIncome * 12, totalIncome);
-    const expectedSavings = Math.round(annualIncome * 0.39);
-    const expectedInvestments = Math.round(annualIncome * 0.17);
-    const latestSalary = salaryEntries[0];
-    const annualCtc = latestSalary?.grossSalary
-      ? Number(latestSalary.grossSalary) * 12
-      : annualIncome;
-    const latestSalaryDate = latestSalary?.incomeDate
-      ? new Date(latestSalary.incomeDate)
-      : null;
-    const expectedNextSalary = latestSalaryDate
-      ? new Date(
-          now.getFullYear(),
-          now.getMonth() + (now.getDate() >= latestSalaryDate.getDate() ? 1 : 0),
-          latestSalaryDate.getDate(),
-        )
-      : null;
-    const salaryGrowth =
-      salaryEntries.length > 1
-        ? Math.round(
-            ((getIncomeAmount(salaryEntries[0]) -
-              getIncomeAmount(salaryEntries[salaryEntries.length - 1])) /
-              Math.max(getIncomeAmount(salaryEntries[salaryEntries.length - 1]), 1)) *
-              1000,
-          ) / 10
-        : 0;
-    const sipIncrease = Math.max(
-      0,
-      Math.round((averageMonthlyIncome - monthlyIncome * 0.6) * 0.08),
-    );
-
-    return {
-      totalIncome,
-      monthlyIncome,
-      recurringIncome,
-      passiveIncome,
-      salaryIncome,
-      variableIncome,
-      averageMonthlyIncome,
-      salaryDependency,
-      diversificationScore,
-      annualIncome,
-      expectedSavings,
-      expectedInvestments,
-      expectedNextSalary,
-      annualCtc,
-      netSalary: latestSalary?.netSalary || latestSalary?.amount || 0,
-      salaryCreditDay: latestSalaryDate?.getDate(),
-      salaryGrowth,
-      sipIncrease,
-    };
-  }, [incomes]);
-
-  const growthData = useMemo(() => {
-    const now = new Date();
-    return Array.from({ length: 6 }, (_, index) => {
-      const date = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
-      const total = incomes
-        .filter((income) => {
-          const incomeDate = new Date(income.incomeDate);
-          return (
-            incomeDate.getMonth() === date.getMonth() &&
-            incomeDate.getFullYear() === date.getFullYear()
-          );
-        })
-        .reduce((sum, income) => sum + getIncomeAmount(income), 0);
-
-      return {
-        month: date.toLocaleString("en-IN", { month: "short" }),
-        income: total,
-      };
-    });
-  }, [incomes]);
-
-  const sourceData = useMemo(
-    () =>
-      incomeSources
-        .map((source) => ({
-          name: source,
-          value: incomes
-            .filter((income) => income.source === source)
-            .reduce((sum, income) => sum + getIncomeAmount(income), 0),
-        }))
-        .filter((item) => item.value > 0),
-    [incomes],
-  );
-
-  const timelineItems = useMemo(
-    () =>
-      incomeSources
-        .map((source) => ({
-          source,
-          amount: incomes
-            .filter((income) => income.source === source)
-            .reduce((sum, income) => sum + getIncomeAmount(income), 0),
-        }))
-        .filter((item) => item.amount > 0)
-        .slice(0, 5),
-    [incomes],
-  );
-
-  const upcomingIncomeItems = useMemo(
-    () =>
-      incomes
-        .filter((income) => income.isRecurring || income.source === "Salary")
-        .map((income) => ({
-          id: income._id,
-          source: income.source,
-          date: getRecurringDay(income),
-        }))
-        .filter((item) => item.date)
-        .sort((a, b) => a.date - b.date)
-        .slice(0, 5),
-    [incomes],
-  );
-
-  const recentIncomeSources = useMemo(
-    () =>
-      [...incomes]
-        .sort((a, b) => new Date(b.incomeDate) - new Date(a.incomeDate))
-        .slice(0, 6),
-    [incomes],
-  );
-
-  // Everything the "Salary Account" panel needs, measured against the linked
-  // account rather than against income rows in isolation.
-  const salaryAccountStats = useMemo(() => {
-    if (!salaryAccount) return null;
-
-    const creditedHere = incomes.filter(
-      (income) => String(income.accountId) === String(salaryAccount._id),
-    );
-    const salaryCredits = creditedHere
-      .filter((income) => income.source === "Salary")
-      .sort((a, b) => new Date(b.incomeDate) - new Date(a.incomeDate));
-    const now = new Date();
-    const lastCredit = salaryCredits[0] || null;
-    const lastCreditDate = lastCredit?.incomeDate
-      ? new Date(lastCredit.incomeDate)
-      : null;
-
-    return {
-      creditedCount: creditedHere.length,
-      totalCredited: creditedHere.reduce(
-        (sum, income) => sum + getIncomeAmount(income),
-        0,
-      ),
-      salaryCredited: salaryCredits.reduce(
-        (sum, income) => sum + getIncomeAmount(income),
-        0,
-      ),
-      thisMonthCredited: creditedHere
-        .filter((income) => {
-          const date = new Date(income.incomeDate);
-          return (
-            date.getMonth() === now.getMonth() &&
-            date.getFullYear() === now.getFullYear()
-          );
-        })
-        .reduce((sum, income) => sum + getIncomeAmount(income), 0),
-      lastCredit,
-      lastCreditDate,
-      nextCreditDate: lastCreditDate
-        ? new Date(
-            now.getFullYear(),
-            now.getMonth() +
-              (now.getDate() >= lastCreditDate.getDate() ? 1 : 0),
-            lastCreditDate.getDate(),
-          )
-        : null,
-      // Salary rows that were parked somewhere other than the linked account.
-      straySalaryCount: incomes.filter(
-        (income) =>
-          income.source === "Salary" &&
-          String(income.accountId) !== String(salaryAccount._id),
-      ).length,
-    };
-  }, [incomes, salaryAccount]);
+  const selectedAccount = accountMap[formData.accountId];
 
   const accountOptions = useMemo(
     () =>
@@ -593,177 +278,192 @@ export default function Income() {
         value: account._id,
         label: account.isSalaryAccount
           ? `${account.name} - Salary Account`
-          : account.name,
+          : account.isEpfAccount
+            ? `${account.name} - EPF Account`
+            : account.name,
       })),
     [accounts],
   );
 
-  const isSalaryForm = formData.source === "Salary";
-  const isDepositAccountMismatched = Boolean(
-    isSalaryForm &&
-      salaryAccount &&
-      formData.accountId &&
-      String(formData.accountId) !== String(salaryAccount._id),
+  const filteredIncomes = useMemo(
+    () =>
+      incomes.filter((income) => {
+        const source = sourceMap[income.sourceKey];
+        const account = accountMap[income.accountId];
+        const haystack = [
+          source?.label,
+          income.payer,
+          income.note,
+          account?.name,
+          income.paymentMode,
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        return (
+          (filters.sourceKey === "all" ||
+            income.sourceKey === filters.sourceKey) &&
+          (filters.account === "all" || income.accountId === filters.account) &&
+          (filters.budget === "all" ||
+            String(Boolean(income.includeInBudget)) === filters.budget) &&
+          haystack.includes(filters.search.toLowerCase())
+        );
+      }),
+    [accountMap, filters, incomes, sourceMap],
   );
 
-  const hasIncomeData = incomes.length > 0;
-  const hasChartData = sourceData.length > 0;
+  const trendData = useMemo(() => {
+    const today = new Date();
 
-  // The on-page Salary Calculator and Salary Account panel write into the same
-  // formData the modal uses, so opening the modal must carry that draft over
-  // instead of blanking it.
-  const openAddModal = () => {
-    setEditingIncome(null);
-    setFormData((prev) => ({
-      ...prev,
-      accountId: prev.accountId || defaultAccountId,
-    }));
-    setShowModal(true);
-  };
+    return Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(today.getFullYear(), today.getMonth() - 5 + index, 1);
+      const month = date.getMonth() + 1;
+      const year = date.getFullYear();
+      const rows = incomes.filter(
+        (income) => income.periodMonth === month && income.periodYear === year,
+      );
 
-  // "Add Salary Credit" from the calculator: force the salary shape and point
-  // the entry at the linked salary account.
-  const openSalaryModal = () => {
-    setEditingIncome(null);
-    setFormData((prev) => ({
-      ...prev,
-      source: "Salary",
-      category: "Salary",
-      accountId: salaryAccount?._id || prev.accountId || defaultAccountId,
-    }));
-    setShowModal(true);
-  };
-
-  const resetSalaryDraft = () => {
-    setFormData({
-      ...createEmptyForm(),
-      accountId: defaultAccountId,
+      return {
+        month: date.toLocaleString("en-IN", { month: "short" }),
+        received: rows.reduce(
+          (sum, income) => sum + Number(income.creditedAmount || 0),
+          0,
+        ),
+        budgetable: rows.reduce(
+          (sum, income) => sum + Number(income.budgetableAmount || 0),
+          0,
+        ),
+      };
     });
-    toast.success("Salary draft cleared");
+  }, [incomes]);
+
+  const pieData = (summary?.bySource || [])
+    .filter((row) => row.monthTotal > 0)
+    .map((row) => ({ name: row.label, value: row.monthTotal }));
+
+  const totals = summary?.totals || {
+    month: 0,
+    monthBudgetable: 0,
+    monthExcluded: 0,
+    epfMonth: 0,
+    epfAllTime: 0,
+    allTime: 0,
+  };
+
+  // =====================================================================
+  // MODAL
+  // =====================================================================
+
+  const defaultAccountFor = (source) => {
+    if (source?.key === "salary" && salaryAccount) return salaryAccount._id;
+
+    return salaryAccount?._id || accounts[0]?._id || "";
+  };
+
+  const openAddModal = () => {
+    const source = sources[0] || null;
+
+    setEditingIncome(null);
+    setFormData(createEmptyForm(source, defaultAccountFor(source)));
+    setShowModal(true);
   };
 
   const openEditModal = (income) => {
+    const source = sourceMap[income.sourceKey];
     const date = income.incomeDate ? new Date(income.incomeDate) : new Date();
-
-    salaryDraftRef.current = formData;
 
     setEditingIncome(income);
     setFormData({
-      ...createEmptyForm(),
-      ...income,
-      amount: String(income.amount || income.netSalary || ""),
-      grossSalary: String(income.grossSalary || ""),
-      basic: String(income.basic || ""),
-      hra: String(income.hra || ""),
-      specialAllowance: String(income.specialAllowance || ""),
-      variablePay: String(income.variablePay || ""),
-      bonus: String(income.bonus || ""),
-      pf: String(income.pf || ""),
-      professionalTax: String(income.professionalTax || ""),
-      incomeTax: String(income.incomeTax || ""),
-      insurance: String(income.insurance || ""),
-      tds: String(income.tds || ""),
-      netSalary: String(income.netSalary || income.amount || ""),
-      attachments: Array.isArray(income.attachments)
-        ? income.attachments.join(", ")
-        : income.attachments || "",
-      accountId: income.accountId || defaultAccountId,
+      ...createEmptyForm(source, income.accountId),
+      sourceKey: income.sourceKey,
+      // Only the declared input fields are editable; derived values are
+      // recomputed rather than round-tripped.
+      fields: (source?.fields || []).reduce(
+        (values, field) => ({
+          ...values,
+          [field.key]: String(income.fields?.[field.key] ?? ""),
+        }),
+        {},
+      ),
+      accountId: income.accountId || "",
+      includeInBudget: income.includeInBudget,
+      payer: income.payer || "",
+      note: income.note || "",
+      attachments: (income.attachments || []).join(", "),
+      paymentMode: income.paymentMode || "Bank Transfer",
+      isRecurring: Boolean(income.isRecurring),
+      recurringType: income.recurringType || "Monthly",
       date: date.toISOString().split("T")[0],
       time: date.toTimeString().slice(0, 5),
+      periodMonth: income.periodMonth || date.getMonth() + 1,
+      periodYear: income.periodYear || date.getFullYear(),
     });
     setShowModal(true);
   };
 
-  const closeModal = () => {
-    setShowModal(false);
+  // Switching source swaps the whole field set - values from the old source
+  // are meaningless under the new one.
+  const handleSourceChange = (key) => {
+    const source = sourceMap[key];
 
-    if (editingIncome && salaryDraftRef.current) {
-      setFormData(salaryDraftRef.current);
-      salaryDraftRef.current = null;
-    }
-
-    setEditingIncome(null);
+    setFormData((prev) => ({
+      ...createEmptyForm(source, defaultAccountFor(source)),
+      payer: prev.payer,
+      note: prev.note,
+      date: prev.date,
+      time: prev.time,
+      periodMonth: prev.periodMonth,
+      periodYear: prev.periodYear,
+      paymentMode: prev.paymentMode,
+    }));
   };
 
-  const handleSaveIncome = async () => {
-    const wasEditing = Boolean(editingIncome);
-
+  const handleSave = async () => {
     if (!formData.accountId) {
-      toast.error(
-        salaryAccount
-          ? "Please select deposit account"
-          : "Link a salary account on the Accounts page, or pick an account",
-      );
+      toast.error("Please choose the account this money went into");
       return;
     }
 
-    if (depositAmount <= 0) {
-      toast.error("Please enter a valid income amount");
+    if (previewTotals.creditedAmount <= 0 && previewTotals.epfAmount <= 0) {
+      toast.error("This entry credits nothing - check the amounts entered");
       return;
     }
 
     try {
       setSaving(true);
 
-      const incomeDate = new Date(`${formData.date}T${formData.time}`);
-      const isSalary = formData.source === "Salary";
       const payload = {
         userId: getUserId(),
-        source: formData.source,
-        category: formData.category || formData.source,
+        sourceKey: formData.sourceKey,
+        fields: formData.fields,
         accountId: formData.accountId,
-        amount: isSalary ? salaryTotals.net : toNumber(formData.amount),
+        includeInBudget: formData.includeInBudget,
+        payer: formData.payer,
+        note: formData.note,
         paymentMode: formData.paymentMode,
-        employer: formData.employer,
-        isRecurring: Boolean(formData.isRecurring),
+        isRecurring: formData.isRecurring,
         recurringType: formData.isRecurring ? formData.recurringType : undefined,
-        salaryMonth: isSalary ? Number(formData.salaryMonth) : undefined,
-        salaryYear: isSalary ? Number(formData.salaryYear) : undefined,
-        grossSalary: isSalary ? salaryTotals.gross : undefined,
-        basic: isSalary ? toNumber(formData.basic) : undefined,
-        hra: isSalary ? toNumber(formData.hra) : undefined,
-        specialAllowance: isSalary
-          ? toNumber(formData.specialAllowance)
-          : undefined,
-        variablePay: isSalary ? toNumber(formData.variablePay) : undefined,
-        bonus: toNumber(formData.bonus),
-        pf: isSalary ? toNumber(formData.pf) : undefined,
-        professionalTax: isSalary
-          ? toNumber(formData.professionalTax)
-          : undefined,
-        incomeTax: isSalary ? toNumber(formData.incomeTax) : undefined,
-        insurance: isSalary ? toNumber(formData.insurance) : undefined,
-        tds: isSalary ? toNumber(formData.tds) : undefined,
-        netSalary: isSalary ? salaryTotals.net : undefined,
+        periodMonth: Number(formData.periodMonth),
+        periodYear: Number(formData.periodYear),
+        incomeDate: new Date(`${formData.date}T${formData.time}`),
         attachments: formData.attachments
           ? formData.attachments.split(",").map((item) => item.trim())
           : [],
-        note: formData.note,
-        incomeDate,
       };
 
-      if (editingIncome) {
-        await updateIncome(editingIncome._id, payload);
-        toast.success("Income updated successfully");
-      } else {
-        await createIncome(payload);
-        toast.success("Income added successfully");
-      }
+      const response = editingIncome
+        ? await updateIncome(editingIncome._id, payload)
+        : await createIncome(payload);
 
-      closeModal();
+      toast.success(
+        editingIncome ? "Income updated" : "Income added and credited",
+      );
 
-      // Keep the salary structure on the page - it repeats month to month -
-      // but clear the one-off fields so the next credit starts clean.
-      if (!wasEditing) {
-        setFormData((prev) => ({
-          ...prev,
-          amount: "",
-          note: "",
-          attachments: "",
-        }));
-      }
+      if (response?.warning) toast.error(response.warning);
 
-      await loadIncomePage();
+      setShowModal(false);
+      setEditingIncome(null);
+      await loadPage();
     } catch (error) {
       console.error("Income Save Error:", error);
       toast.error(error?.response?.data?.message || "Failed to save income");
@@ -772,15 +472,34 @@ export default function Income() {
     }
   };
 
-  const handleDeleteIncome = async () => {
+  // =====================================================================
+  // DELETE - always confirmed, and the confirmation states the consequence
+  // =====================================================================
+
+  const requestDelete = async (income) => {
+    setDeleteTarget(income);
+    setDeleteImpact(null);
+
+    try {
+      const response = await getIncomeDeleteImpact(income._id);
+
+      setDeleteImpact(response.data);
+    } catch (error) {
+      console.error(error);
+      // The dialog still opens - it just falls back to a generic warning.
+    }
+  };
+
+  const handleDelete = async () => {
     if (!deleteTarget) return;
 
     try {
       setDeleting(true);
       await deleteIncome(deleteTarget._id);
-      toast.success("Income entry deleted");
+      toast.success("Income deleted and the credit reversed");
       setDeleteTarget(null);
-      await loadIncomePage();
+      setDeleteImpact(null);
+      await loadPage();
     } catch (error) {
       console.error(error);
       toast.error(error?.response?.data?.message || "Failed to delete income");
@@ -789,16 +508,51 @@ export default function Income() {
     }
   };
 
+  const deleteMessage = () => {
+    if (!deleteTarget) return "";
+
+    const label = sourceMap[deleteTarget.sourceKey]?.label || "income";
+
+    if (!deleteImpact) {
+      return `This permanently deletes the ${label} entry and reverses its credit. This cannot be undone.`;
+    }
+
+    const lines = [
+      `This permanently deletes the ${label} entry of ${money(deleteImpact.creditedAmount)}.`,
+    ];
+
+    if (deleteImpact.account) {
+      lines.push(
+        `${deleteImpact.account.name}: ${money(deleteImpact.account.balance)} to ${money(deleteImpact.account.balanceAfter)}.`,
+      );
+    }
+
+    if (deleteImpact.epfAccount && deleteImpact.epfAmount > 0) {
+      lines.push(
+        `${deleteImpact.epfAccount.name}: ${money(deleteImpact.epfAccount.balance)} to ${money(deleteImpact.epfAccount.balanceAfter)}.`,
+      );
+    }
+
+    if (deleteImpact.budgetableAmount > 0) {
+      lines.push(
+        `Budgetable income drops by ${money(deleteImpact.budgetableAmount)}.`,
+      );
+    }
+
+    return lines.join(" ");
+  };
+
+  // =====================================================================
+  // RENDER
+  // =====================================================================
+
   if (loading) {
     return (
       <DashboardLayout>
         <div className="min-h-screen bg-slate-950 text-white">
-          <div className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-            <Skeleton className="h-64" />
-            <Skeleton className="h-64" />
-          </div>
-          <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, index) => (
+          <Skeleton className="mb-6 h-56" />
+          <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
               <Skeleton key={index} className="h-24" />
             ))}
           </div>
@@ -811,805 +565,505 @@ export default function Income() {
     );
   }
 
+  const monthLabel = `${monthNames[period.month - 1]} ${period.year}`;
+
   return (
     <DashboardLayout>
       <div className="min-h-screen bg-slate-950 text-white">
+        {/* ============ HERO ============ */}
         <motion.section
           {...motionProps(0)}
-          className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]"
+          className="mb-6 rounded-2xl border border-emerald-400/20 bg-slate-900 p-5 shadow-2xl shadow-emerald-950/20"
         >
-          <div className="rounded-2xl border border-emerald-400/20 bg-slate-900 p-5 shadow-2xl shadow-emerald-950/20">
-            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">
-                  Hero Dashboard
-                </p>
-                <h1 className="mt-2 text-3xl font-bold leading-tight lg:text-4xl">
-                  Income Command Center
-                </h1>
-              </div>
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">
+                Step 1 of your plan
+              </p>
+              <h1 className="mt-2 text-3xl font-bold leading-tight lg:text-4xl">
+                Income
+              </h1>
+              <p className="mt-2 max-w-xl text-sm text-slate-400">
+                Record what comes in first. Your budget is planned against the
+                income you mark as budgetable.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                aria-label="Month"
+                value={period.month}
+                onChange={(event) =>
+                  setPeriod((prev) => ({
+                    ...prev,
+                    month: Number(event.target.value),
+                  }))
+                }
+              >
+                {monthNames.map((name, index) => (
+                  <option key={name} value={index + 1}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+
+              <Select
+                aria-label="Year"
+                value={period.year}
+                onChange={(event) =>
+                  setPeriod((prev) => ({
+                    ...prev,
+                    year: Number(event.target.value),
+                  }))
+                }
+              >
+                {[period.year - 2, period.year - 1, period.year, period.year + 1].map(
+                  (year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ),
+                )}
+              </Select>
+
               <button
                 onClick={openAddModal}
-                className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-slate-950 transition-colors hover:bg-emerald-400"
+                className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-slate-950 transition-colors hover:bg-emerald-400"
               >
                 <FiPlus />
                 Add Income
               </button>
             </div>
-
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                ["Annual Income (CTC)", money(analytics.annualCtc)],
-                ["Net Salary", `${money(analytics.netSalary)}/month`],
-                ["Income This Month", money(analytics.monthlyIncome)],
-                [
-                  "Expected Next Salary",
-                  analytics.expectedNextSalary
-                    ? formatDayMonth(analytics.expectedNextSalary)
-                    : "Add salary",
-                ],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-xl border border-white/10 bg-white/[0.04] p-4"
-                >
-                  <p className="text-sm text-slate-400">{label}</p>
-                  <p className="mt-2 break-words text-2xl font-bold">{value}</p>
-                </div>
-              ))}
-            </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <p className="text-sm text-slate-400">AI Suggestions</p>
-            <div className="mt-4 space-y-3 text-sm">
-              <p>
-                {analytics.salaryCreditDay
-                  ? `Salary credited around day ${analytics.salaryCreditDay} of every month.`
-                  : "Add a salary entry to estimate your next salary date."}
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatTile
+              label={`Received in ${monthLabel}`}
+              value={money(totals.month)}
+              tone="positive"
+              hint={`${summary?.bySource?.length || 0} active sources`}
+            />
+            <StatTile
+              label="Budgetable"
+              value={money(totals.monthBudgetable)}
+              hint="What the budget may plan against"
+            />
+            <StatTile
+              label="Excluded from budget"
+              value={money(totals.monthExcluded)}
+              tone="muted"
+              hint="Marked as not for planning"
+            />
+            <StatTile
+              label="EPF this month"
+              value={money(totals.epfMonth)}
+              tone="muted"
+              hint={`${money(totals.epfAllTime)} lifetime`}
+            />
+          </div>
+
+          {/* ============ INCOME -> BUDGET FLOW ============ */}
+          <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-slate-950 p-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                Received
               </p>
-              <p>Average Monthly Income {money(analytics.averageMonthlyIncome)}</p>
-              <p>
-                {analytics.sipIncrease > 0
-                  ? `You can safely increase your SIP by ${money(analytics.sipIncrease)}.`
-                  : "SIP increase suggestion will appear after monthly income builds up."}
-              </p>
-              <p>Expected Annual Savings {shortMoney(analytics.expectedSavings)}</p>
-              <div className="grid gap-2 pt-2 sm:grid-cols-2">
-                <span className="rounded-xl bg-emerald-500/10 p-3 text-emerald-200">
-                  Salary growth {analytics.salaryGrowth}%
-                </span>
-                <span className="rounded-xl bg-cyan-500/10 p-3 text-cyan-200">
-                  Passive income {analytics.totalIncome
-                    ? Math.round((analytics.passiveIncome / analytics.totalIncome) * 100)
-                    : 0}%
-                </span>
-              </div>
+              <p className="font-bold">{money(totals.month)}</p>
             </div>
+            <FiArrowRight className="text-slate-600" />
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                Budgetable
+              </p>
+              <p className="font-bold text-emerald-300">
+                {money(totals.monthBudgetable)}
+              </p>
+            </div>
+            <FiArrowRight className="text-slate-600" />
+            <Link
+              to="/budget"
+              className="rounded-xl bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/25"
+            >
+              Plan this month's budget
+            </Link>
+
+            {totals.monthBudgetable <= 0 && (
+              <p className="flex items-center gap-2 text-xs text-amber-200">
+                <FiAlertTriangle className="shrink-0" />
+                Nothing budgetable yet for {monthLabel} - add income first.
+              </p>
+            )}
           </div>
         </motion.section>
 
+        {/* ============ SOURCE BREAKDOWN ============ */}
+        <motion.section {...motionProps(0.05)} className="mb-6">
+          <h2 className="mb-3 text-xl font-bold">Where the money came from</h2>
+
+          {summary?.bySource?.length ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {summary.bySource.map((row) => (
+                <div
+                  key={row.key}
+                  className="rounded-2xl border border-white/10 bg-slate-900 p-4"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 font-semibold">
+                      <span className="text-xl">{row.icon}</span>
+                      {row.label}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {row.count} entr{row.count === 1 ? "y" : "ies"}
+                    </span>
+                  </div>
+
+                  <p className="mt-3 break-words text-2xl font-bold text-emerald-300">
+                    {money(row.monthTotal)}
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    {row.monthBudgetable === row.monthTotal
+                      ? "All budgetable"
+                      : `${money(row.monthBudgetable)} budgetable`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={FiInbox}
+              title={`No income recorded for ${monthLabel}`}
+              message="Add your salary, business income, freelancing, rent or anything else that credits an account."
+            />
+          )}
+        </motion.section>
+
+        {/* ============ ACCOUNT LINKS ============ */}
         <motion.section
-          {...motionProps(0.05)}
-          className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+          {...motionProps(0.1)}
+          className="mb-6 grid gap-6 xl:grid-cols-2"
         >
           {[
-            ["Total Income", analytics.totalIncome, "text-emerald-300"],
-            ["Recurring Income", analytics.recurringIncome, "text-cyan-300"],
-            ["Passive Income", analytics.passiveIncome, "text-violet-300"],
-            ["Variable Income", analytics.variableIncome, "text-amber-300"],
-            ["Salary Dependency", `${analytics.salaryDependency}%`, "text-rose-300"],
-          ].map(([label, value, color]) => (
+            {
+              title: "Salary Account",
+              account: salaryAccount,
+              blurb: "Where salary lands.",
+              empty:
+                "No salary account linked. Salary entries have no fixed home until you mark one.",
+            },
+            {
+              title: "EPF Account",
+              account: epfAccount,
+              blurb: "EPF is withheld from salary and accumulates here.",
+              empty:
+                "No EPF account linked. EPF on a salary entry is recorded but no balance is credited.",
+            },
+          ].map((panel) => (
             <div
-              key={label}
-              className="rounded-xl border border-white/10 bg-white/[0.04] p-4"
+              key={panel.title}
+              className="rounded-2xl border border-white/10 bg-slate-900 p-5"
             >
-              <p className="text-sm text-slate-400">{label}</p>
-              <p className={`mt-2 break-words text-2xl font-bold ${color}`}>
-                {typeof value === "number" ? money(value) : value}
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-bold">{panel.title}</h2>
+                  <p className="mt-1 text-sm text-slate-400">{panel.blurb}</p>
+                </div>
+                <Link
+                  to="/accounts"
+                  className="rounded-xl bg-white/10 px-3 py-2 text-sm transition hover:bg-white/20"
+                >
+                  Manage
+                </Link>
+              </div>
+
+              {panel.account ? (
+                <div className="mt-4 rounded-xl bg-slate-800/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 font-semibold">
+                      <FiCreditCard className="text-emerald-300" />
+                      {panel.account.name}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs text-emerald-300">
+                      <FiCheckCircle />
+                      Linked
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-400">Balance</p>
+                  <p className="break-words text-3xl font-bold text-emerald-300">
+                    {money(panel.account.balance)}
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4">
+                  <p className="flex items-start gap-2 text-sm text-amber-200">
+                    <FiAlertTriangle className="mt-0.5 shrink-0" />
+                    {panel.empty}
+                  </p>
+                  <Link
+                    to="/accounts"
+                    className="mt-4 inline-flex rounded-xl bg-emerald-500 px-4 py-2 font-semibold text-slate-950 transition-colors hover:bg-emerald-400"
+                  >
+                    Link an account
+                  </Link>
+                </div>
+              )}
             </div>
           ))}
         </motion.section>
 
+        {/* ============ CHARTS ============ */}
         <motion.section
-          {...motionProps(0.1)}
-          className="mb-6 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]"
+          {...motionProps(0.15)}
+          className="mb-6 grid gap-6 xl:grid-cols-2"
         >
           <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <div className="flex items-center gap-2">
-              <FiTrendingUp className="text-emerald-300" />
-              <h2 className="text-xl font-bold">Income by Source</h2>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-              {incomeSources.slice(0, 9).map((source) => {
-                const total = incomes
-                  .filter((income) => income.source === source)
-                  .reduce((sum, income) => sum + getIncomeAmount(income), 0);
-                return (
-                  <button
-                    key={source}
-                    onClick={() =>
-                      setFilters((prev) => ({ ...prev, source }))
-                    }
-                    className="rounded-xl border border-white/10 bg-slate-800/70 p-4 text-left transition-colors hover:border-emerald-300/60"
-                  >
-                    <p className="text-sm text-slate-400">{source}</p>
-                    <p className="mt-2 break-words text-lg font-semibold">
-                      {money(total)}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <h2 className="text-xl font-bold">Income Insights</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                ["Recurring Income", analytics.recurringIncome],
-                ["Passive Income", analytics.passiveIncome],
-                ["Variable Income", analytics.variableIncome],
-                ["Salary Dependency", `${analytics.salaryDependency}%`],
-                ["Diversification Score", `${analytics.diversificationScore} / 10`],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-xl bg-slate-800/80 p-4"
-                >
-                  <p className="text-sm text-slate-400">{label}</p>
-                  <p className="mt-2 break-words text-xl font-bold">
-                    {typeof value === "number" ? money(value) : value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.section>
-
-        <motion.section {...motionProps(0.15)} className="mb-6 grid gap-6 xl:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold">Salary Calculator</h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  This draft carries straight into the income entry - nothing
-                  you type here is thrown away.
-                </p>
-              </div>
-              <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                Draft
-              </span>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {[
-                ["CTC / Gross Salary", "grossSalary"],
-                ["Basic", "basic"],
-                ["HRA", "hra"],
-                ["PF", "pf"],
-                ["Professional Tax", "professionalTax"],
-                ["Bonus", "bonus"],
-                ["Insurance", "insurance"],
-                ["Income Tax", "incomeTax"],
-              ].map(([label, key]) => (
-                <FormField
-                  key={key}
-                  label={label}
-                  type="number"
-                  value={formData[key]}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      [key]: event.target.value,
-                    }))
-                  }
-                />
-              ))}
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl bg-emerald-500/10 p-4">
-                <p className="text-sm text-emerald-200">Gross Salary</p>
-                <p className="break-words text-2xl font-bold">{money(salaryTotals.gross)}</p>
-              </div>
-              <div className="rounded-xl bg-rose-500/10 p-4">
-                <p className="text-sm text-rose-200">Deductions</p>
-                <p className="break-words text-2xl font-bold">{money(salaryTotals.deductions)}</p>
-              </div>
-              <div className="rounded-xl bg-cyan-500/10 p-4">
-                <p className="text-sm text-cyan-200">Net Salary</p>
-                <p className="break-words text-2xl font-bold">{money(salaryTotals.net)}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Button onClick={openSalaryModal} disabled={salaryTotals.net <= 0}>
-                Add Salary Credit
-              </Button>
-              <Button variant="secondary" onClick={resetSalaryDraft}>
-                Clear
-              </Button>
+            <h2 className="text-xl font-bold">6-Month Trend</h2>
+            <div className="mt-4 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="received" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CHART_POSITIVE} stopOpacity={0.7} />
+                      <stop offset="95%" stopColor={CHART_POSITIVE} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="month" stroke={CHART_AXIS} fontSize={12} />
+                  <YAxis stroke={CHART_AXIS} fontSize={12} />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    formatter={(value) => money(value)}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="received"
+                    stroke={CHART_POSITIVE}
+                    fill="url(#received)"
+                    name="Received"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="budgetable"
+                    stroke={CHART_INFO}
+                    fill="transparent"
+                    name="Budgetable"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold">Salary Account</h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Where salary lands and how the balance moves.
-                </p>
-              </div>
-              <Link
-                to="/accounts"
-                className="rounded-xl bg-white/10 px-3 py-2 text-sm transition hover:bg-white/20"
-              >
-                Manage
-              </Link>
-            </div>
-
-            {!salaryAccount ? (
-              <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4">
-                <p className="flex items-start gap-2 text-sm text-amber-200">
-                  <FiAlertTriangle className="mt-0.5 shrink-0" />
-                  No salary account is linked yet, so salary income has no fixed
-                  home. Mark one account as your salary account and this page
-                  stays in sync with it.
-                </p>
-                <Link
-                  to="/accounts"
-                  className="mt-4 inline-flex rounded-xl bg-emerald-500 px-4 py-2 font-semibold text-slate-950 transition-colors hover:bg-emerald-400"
-                >
-                  Link a salary account
-                </Link>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-xl bg-slate-800/80 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <FiCreditCard className="text-emerald-300" />
-                    <span className="font-semibold">{salaryAccount.name}</span>
-                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">
-                      {salaryAccount.type}
-                    </span>
-                  </div>
-                  <span className="flex items-center gap-1 text-xs text-emerald-300">
-                    <FiCheckCircle />
-                    Linked
-                  </span>
-                </div>
-
-                <p className="mt-3 text-sm text-slate-400">Current Balance</p>
-                <p className="break-words text-3xl font-bold text-emerald-300">
-                  {money(salaryAccount.balance)}
-                </p>
-
-                <div className="my-4 h-px bg-white/10" />
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <p className="text-sm text-slate-400">Last Salary Credit</p>
-                    <p className="break-words text-lg font-semibold">
-                      {salaryAccountStats?.lastCredit
-                        ? money(getIncomeAmount(salaryAccountStats.lastCredit))
-                        : "-"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {salaryAccountStats?.lastCreditDate
-                        ? formatDate(salaryAccountStats.lastCreditDate)
-                        : "No salary credited yet"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-400">Next Expected</p>
-                    <p className="break-words text-lg font-semibold text-cyan-300">
-                      {salaryAccountStats?.nextCreditDate
-                        ? formatDayMonth(salaryAccountStats.nextCreditDate)
-                        : "-"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {salaryAccountStats?.creditedCount || 0} credits recorded
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-400">Salary Credited</p>
-                    <p className="break-words text-lg font-semibold">
-                      {money(salaryAccountStats?.salaryCredited)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-400">Credited This Month</p>
-                    <p className="break-words text-lg font-semibold">
-                      {money(salaryAccountStats?.thisMonthCredited)}
-                    </p>
-                  </div>
-                </div>
-
-                {salaryAccountStats?.straySalaryCount > 0 && (
-                  <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-200">
-                    <FiAlertTriangle className="mt-0.5 shrink-0" />
-                    {salaryAccountStats.straySalaryCount} salary entr
-                    {salaryAccountStats.straySalaryCount === 1
-                      ? "y is"
-                      : "ies are"}{" "}
-                    credited to a different account.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="mt-4 rounded-xl bg-slate-800/80 p-4">
-              <p className="text-sm text-slate-400">
-                Pending {isSalaryForm ? "Salary" : formData.source} Credit
-              </p>
-              <p className="mt-1 break-words text-3xl font-bold text-emerald-300">
-                {money(depositAmount)}
-              </p>
-
-              <div className="my-4 h-px bg-white/10" />
-
-              <FormField
-                label="Deposit To"
-                type="select"
-                value={formData.accountId}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    accountId: event.target.value,
-                  }))
-                }
-                placeholder="Select Account"
-                options={accountOptions}
-              />
-
-              {isDepositAccountMismatched && (
-                <button
-                  onClick={() =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      accountId: salaryAccount._id,
-                    }))
-                  }
-                  className="mt-2 flex w-full items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-left text-xs text-amber-200 transition hover:bg-amber-500/20"
-                >
-                  <FiAlertTriangle className="shrink-0" />
-                  Salary usually goes to {salaryAccount.name}. Tap to switch
-                  back.
-                </button>
-              )}
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <p className="text-sm text-slate-400">Current Balance</p>
-                  <p className="break-words text-xl font-bold">
-                    {money(selectedDepositAccount?.balance || 0)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-slate-400">Balance After Credit</p>
-                  <p className="break-words text-xl font-bold text-emerald-300">
-                    {money(balanceAfterCredit)}
-                  </p>
-                </div>
-              </div>
-
-              <p className="mt-4 text-sm text-slate-400">
-                Live preview - applied when you save the entry.
-              </p>
-            </div>
-          </div>
-        </motion.section>
-
-        <motion.section {...motionProps(0.2)} className="mb-6 grid gap-6 xl:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <h2 className="text-xl font-bold">Monthly Income Timeline</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              {monthNames[new Date().getMonth()]}
-            </p>
-            <div className="mt-4 space-y-3">
-              {timelineItems.length > 0 ? (
-                timelineItems.map((item) => (
-                <div
-                  key={item.source}
-                  className="flex flex-wrap items-center justify-between gap-2"
-                >
-                  <span>{item.source}</span>
-                  <span className="font-semibold text-emerald-300">
-                    {money(item.amount)}
-                  </span>
-                </div>
-                ))
-              ) : (
-                <EmptyState
-                  icon={FiCalendar}
-                  title="No income this month yet"
-                  message="Add income to build the monthly timeline."
-                />
-              )}
-              <div className="border-t border-white/10 pt-3 font-bold">
-                Total {money(analytics.monthlyIncome)}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <h2 className="text-xl font-bold">Income Calendar</h2>
-            <div className="mt-4 space-y-3">
-              {upcomingIncomeItems.length > 0 ? (
-                upcomingIncomeItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-800 p-3"
-                  >
-                    <span>{item.source}</span>
-                    <span className="text-slate-300">
-                      {formatDayMonth(item.date)}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <EmptyState
-                  icon={FiClock}
-                  title="No upcoming dates yet"
-                  message="Recurring income dates will appear here."
-                />
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <h2 className="text-xl font-bold">Annual Projection</h2>
-            <div className="mt-4 space-y-3">
-              {[
-                ["Expected Income", analytics.annualIncome],
-                ["Expected Savings", analytics.expectedSavings],
-                ["Expected Investments", analytics.expectedInvestments],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="flex flex-wrap items-center justify-between gap-2"
-                >
-                  <span className="text-slate-400">{label}</span>
-                  <span className="break-words text-xl font-bold">
-                    {money(value)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.section>
-
-        <motion.section
-          {...motionProps(0.25)}
-          className="mb-6 rounded-2xl border border-white/10 bg-slate-900 p-5"
-        >
-          <h2 className="text-xl font-bold">Income Sources</h2>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {recentIncomeSources.length > 0 ? (
-              recentIncomeSources.map((income) => (
-              <div
-                key={income._id}
-                className="rounded-xl border border-white/10 bg-slate-800/80 p-4 transition-colors hover:border-emerald-300/40"
-              >
-                <p className="text-lg font-semibold">{income.source}</p>
-                <p className="mt-1 break-words text-2xl font-bold text-emerald-300">
-                  {money(getIncomeAmount(income))}
-                </p>
-                <p className="mt-2 text-sm text-slate-400">
-                  {income.isRecurring ? income.recurringType || "Recurring" : "One Time"} |{" "}
-                  {accountMap[income.accountId]?.name || "No account"}
-                </p>
-                <button
-                  onClick={() => openEditModal(income)}
-                  className="mt-4 flex items-center gap-2 text-sm text-cyan-300"
-                >
-                  <FiEdit2 />
-                  Edit
-                </button>
-              </div>
-              ))
-            ) : (
-              <div className="md:col-span-3">
-                <EmptyState
-                  icon={FiInbox}
-                  title="No income sources yet"
-                  message="Add your first income source to see dynamic source cards here."
-                  action={
-                    <Button icon={FiPlus} onClick={openAddModal}>
-                      Add Income
-                    </Button>
-                  }
-                />
-              </div>
-            )}
-          </div>
-        </motion.section>
-
-        <motion.section {...motionProps(0.3)} className="mb-6 grid gap-6 xl:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <h2 className="text-xl font-bold">Income Growth</h2>
-            <div className="mt-4 h-64 sm:h-72">
-              {hasIncomeData ? (
+            <h2 className="text-xl font-bold">Source Split - {monthLabel}</h2>
+            <div className="mt-4 h-64">
+              {pieData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={growthData}>
-                    <CartesianGrid stroke="#1e293b" />
-                    <XAxis dataKey="month" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" width={54} />
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={60}
+                      outerRadius={95}
+                      paddingAngle={3}
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell
+                          key={entry.name}
+                          fill={CHART_COLORS[index % CHART_COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
                     <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
                       formatter={(value) => money(value)}
-                      contentStyle={{
-                        background: "#0f172a",
-                        border: "1px solid #334155",
-                      }}
                     />
-                    <Area
-                      type="monotone"
-                      dataKey="income"
-                      stroke="#22c55e"
-                      fill="#22c55e"
-                      fillOpacity={0.22}
-                    />
-                  </AreaChart>
+                  </PieChart>
                 </ResponsiveContainer>
               ) : (
                 <EmptyState
-                  className="h-full"
                   icon={FiTrendingUp}
-                  title="No growth data yet"
-                  message="Add dated income records to generate the growth chart."
+                  title="Nothing to chart yet"
+                  message="Add income for this month to see the split."
                 />
               )}
             </div>
           </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <h2 className="text-xl font-bold">Income Sources Chart</h2>
-            <div className="mt-4 grid min-h-64 gap-4 md:h-72 md:grid-cols-2">
-              {hasChartData ? (
-                <>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={sourceData}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={45}
-                        outerRadius={85}
-                      >
-                        {sourceData.map((entry, index) => (
-                          <Cell
-                            key={entry.name}
-                            fill={chartColors[index % chartColors.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => money(value)} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={sourceData.slice(0, 5)}>
-                      <CartesianGrid stroke="#1e293b" />
-                      <XAxis dataKey="name" stroke="#94a3b8" />
-                      <YAxis stroke="#94a3b8" width={54} />
-                      <Tooltip formatter={(value) => money(value)} />
-                      <Bar dataKey="value" fill="#38bdf8" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </>
-              ) : (
-                <div className="md:col-span-2">
-                  <EmptyState
-                    icon={FiPieChart}
-                    title="No income sources to chart yet"
-                    message="Add income sources to compare salary, business, freelancing, rental, and interest income."
-                  />
-                </div>
-              )}
-            </div>
-          </div>
         </motion.section>
 
+        {/* ============ TABLE ============ */}
         <motion.section
-          {...motionProps(0.35)}
-          className="mb-6 rounded-2xl border border-white/10 bg-slate-900 p-5"
+          {...motionProps(0.2)}
+          className="rounded-2xl border border-white/10 bg-slate-900 p-5"
         >
-          <div className="mb-4 flex items-center gap-2">
-            <FiFilter className="text-cyan-300" />
-            <h2 className="text-xl font-bold">Filters</h2>
-          </div>
-          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
-            <select
-              aria-label="Filter by month"
-              value={filters.month}
-              onChange={(event) =>
-                setFilters((prev) => ({ ...prev, month: event.target.value }))
-              }
-              className="rounded-xl border border-white/10 bg-slate-800 p-3"
-            >
-              <option value="all">Month</option>
-              {monthNames.map((month, index) => (
-                <option key={month} value={index + 1}>
-                  {month}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by year"
-              value={filters.year}
-              onChange={(event) =>
-                setFilters((prev) => ({ ...prev, year: event.target.value }))
-              }
-              className="rounded-xl border border-white/10 bg-slate-800 p-3"
-            >
-              <option value="all">Year</option>
-              {[2024, 2025, 2026, 2027].map((year) => (
-                <option key={year}>{year}</option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by account"
-              value={filters.account}
-              onChange={(event) =>
-                setFilters((prev) => ({ ...prev, account: event.target.value }))
-              }
-              className="rounded-xl border border-white/10 bg-slate-800 p-3"
-            >
-              <option value="all">Account</option>
-              {accountOptions.map((account) => (
-                <option key={account.value} value={account.value}>
-                  {account.label}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by income source"
-              value={filters.source}
-              onChange={(event) =>
-                setFilters((prev) => ({ ...prev, source: event.target.value }))
-              }
-              className="rounded-xl border border-white/10 bg-slate-800 p-3"
-            >
-              <option value="all">Income Source</option>
-              {incomeSources.map((source) => (
-                <option key={source}>{source}</option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by payment mode"
-              value={filters.paymentMode}
-              onChange={(event) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  paymentMode: event.target.value,
-                }))
-              }
-              className="rounded-xl border border-white/10 bg-slate-800 p-3"
-            >
-              <option value="all">Payment Mode</option>
-              {paymentModes.map((mode) => (
-                <option key={mode}>{mode}</option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by recurring status"
-              value={filters.recurring}
-              onChange={(event) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  recurring: event.target.value,
-                }))
-              }
-              className="rounded-xl border border-white/10 bg-slate-800 p-3"
-            >
-              <option value="all">Recurring</option>
-              <option value="true">Recurring</option>
-              <option value="false">One Time</option>
-            </select>
-            <div className="relative">
-              <FiSearch className="absolute left-3 top-3.5 text-slate-400" />
-              <input
-                aria-label="Search income records"
-                value={filters.search}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-bold">All Income</h2>
+
+            <div className="flex flex-wrap gap-2">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  aria-label="Search income"
+                  value={filters.search}
+                  onChange={(event) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      search: event.target.value,
+                    }))
+                  }
+                  placeholder="Search"
+                  className="rounded-xl border border-white/10 bg-slate-800 p-3 pl-9"
+                />
+              </div>
+
+              <select
+                aria-label="Filter by source"
+                value={filters.sourceKey}
                 onChange={(event) =>
                   setFilters((prev) => ({
                     ...prev,
-                    search: event.target.value,
+                    sourceKey: event.target.value,
                   }))
                 }
-                placeholder="Search"
-                className="w-full rounded-xl border border-white/10 bg-slate-800 py-3 pl-10 pr-3"
-              />
+                className="rounded-xl border border-white/10 bg-slate-800 p-3"
+              >
+                <option value="all">All sources</option>
+                {sources.map((source) => (
+                  <option key={source.key} value={source.key}>
+                    {source.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by account"
+                value={filters.account}
+                onChange={(event) =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    account: event.target.value,
+                  }))
+                }
+                className="rounded-xl border border-white/10 bg-slate-800 p-3"
+              >
+                <option value="all">All accounts</option>
+                {accountOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by budget inclusion"
+                value={filters.budget}
+                onChange={(event) =>
+                  setFilters((prev) => ({ ...prev, budget: event.target.value }))
+                }
+                className="rounded-xl border border-white/10 bg-slate-800 p-3"
+              >
+                <option value="all">Budget: any</option>
+                <option value="true">In budget</option>
+                <option value="false">Excluded</option>
+              </select>
             </div>
           </div>
-        </motion.section>
 
-        <motion.section
-          {...motionProps(0.4)}
-          className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900"
-        >
-          <div className="flex items-center justify-between border-b border-white/10 p-5">
-            <h2 className="text-xl font-bold">Income Table</h2>
-            <span className="text-sm text-slate-400">
-              {filteredIncomes.length} records
-            </span>
-          </div>
-          <div className="max-h-[32rem] overflow-auto">
-            <table className="w-full min-w-[1100px]">
-              <thead>
-                <tr className="sticky top-0 z-10 bg-slate-800/95 text-left text-sm text-slate-300 backdrop-blur">
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="text-slate-400">
+                <tr>
                   <th className="p-4">Date</th>
-                  <th className="p-4">Account</th>
                   <th className="p-4">Source</th>
-                  <th className="p-4">Category</th>
-                  <th className="p-4">Recurring</th>
-                  <th className="p-4">Payment Mode</th>
-                  <th className="p-4">Employer</th>
-                  <th className="p-4">Amount</th>
-                  <th className="p-4">Status</th>
+                  <th className="p-4">Account</th>
+                  <th className="p-4">Credited</th>
+                  <th className="p-4">Budget</th>
+                  <th className="p-4">Details</th>
                   <th className="p-4">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredIncomes.length > 0 ? (
-                  filteredIncomes.map((income) => (
-                    <tr key={income._id} className="border-t border-white/5">
-                      <td className="p-4">{formatDate(income.incomeDate)}</td>
-                      <td className="p-4">
-                        <span className="flex items-center gap-2">
-                          {accountMap[income.accountId]?.name || "-"}
-                          {accountMap[income.accountId]?.isSalaryAccount && (
-                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">
-                              Salary
+                  filteredIncomes.map((income) => {
+                    const source = sourceMap[income.sourceKey];
+                    const account = accountMap[income.accountId];
+
+                    return (
+                      <tr key={income._id} className="border-t border-white/5">
+                        <td className="p-4">{formatDate(income.incomeDate)}</td>
+                        <td className="p-4">
+                          <span className="flex items-center gap-2">
+                            <span>{source?.icon}</span>
+                            {source?.label || income.sourceKey}
+                          </span>
+                          {income.payer && (
+                            <span className="block text-xs text-slate-500">
+                              {income.payer}
                             </span>
                           )}
-                        </span>
-                      </td>
-                      <td className="p-4">{income.source}</td>
-                      <td className="p-4">{income.category || income.source}</td>
-                      <td className="p-4">
-                        {income.isRecurring ? income.recurringType || "Yes" : "No"}
-                      </td>
-                      <td className="p-4">{income.paymentMode || "-"}</td>
-                      <td className="p-4">{income.employer || "-"}</td>
-                      <td className="p-4 font-semibold text-emerald-300">
-                        {money(getIncomeAmount(income))}
-                      </td>
-                      <td className="p-4">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-sm text-emerald-200">
-                          <FiCheckCircle />
-                          Credited
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => openEditModal(income)}
-                            className="text-cyan-300 hover:text-cyan-200"
-                            title="Edit"
-                            aria-label={`Edit ${income.source} income entry`}
-                          >
-                            <FiEdit2 />
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget(income)}
-                            className="text-rose-300 hover:text-rose-200"
-                            title="Delete"
-                            aria-label={`Delete ${income.source} income entry`}
-                          >
-                            <FiTrash2 />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="p-4">
+                          <span className="flex items-center gap-2">
+                            {account?.name || "-"}
+                            {account?.isSalaryAccount && (
+                              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">
+                                Salary
+                              </span>
+                            )}
+                          </span>
+                        </td>
+                        <td className="p-4 font-semibold text-emerald-300">
+                          {money(income.creditedAmount)}
+                        </td>
+                        <td className="p-4">
+                          {income.includeInBudget ? (
+                            <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300">
+                              {money(income.budgetableAmount)}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-700/60 px-2 py-1 text-xs text-slate-400">
+                              Excluded
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 text-xs text-slate-400">
+                          {(source?.derived || [])
+                            .filter((d) => Number(income.fields?.[d.key]) > 0)
+                            .map((d) => `${d.label}: ${money(income.fields[d.key])}`)
+                            .join("  |  ") || "-"}
+                          {income.epfAmount > 0 && (
+                            <span className="block text-cyan-300">
+                              EPF: {money(income.epfAmount)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => openEditModal(income)}
+                              aria-label="Edit income"
+                              className="text-cyan-300"
+                            >
+                              <FiEdit2 />
+                            </button>
+                            <button
+                              onClick={() => requestDelete(income)}
+                              aria-label="Delete income"
+                              className="text-rose-400"
+                            >
+                              <FiTrash2 />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
-                    <td colSpan="10" className="p-6">
+                    <td colSpan={7} className="p-8">
                       <EmptyState
-                        icon={FiSearch}
-                        title="No income found"
-                        message="Try adjusting your filters, or add a new income entry."
+                        icon={FiInbox}
+                        title="No matching income"
+                        message="Adjust the filters, or add a new income entry."
                       />
                     </td>
                   </tr>
@@ -1619,62 +1073,124 @@ export default function Income() {
           </div>
         </motion.section>
 
+        {/* ============ ADD / EDIT MODAL ============ */}
         <Modal
           isOpen={showModal}
-          onClose={closeModal}
+          onClose={() => {
+            setShowModal(false);
+            setEditingIncome(null);
+          }}
           title={editingIncome ? "Edit Income" : "Add Income"}
-          maxWidth="max-w-5xl"
+          maxWidth="max-w-3xl"
         >
-          <div className="grid gap-3 md:grid-cols-3">
-            <FormField
-              label="Source"
-              type="select"
-              value={formData.source}
-              onChange={(event) => {
-                const source = event.target.value;
+          {/* Source picker - driven entirely by the server registry */}
+          <div>
+            <p className="mb-2 text-sm text-slate-400">Income Source</p>
+            <div className="flex flex-wrap gap-2">
+              {sources.map((source) => (
+                <button
+                  key={source.key}
+                  onClick={() => handleSourceChange(source.key)}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${
+                    formData.sourceKey === source.key
+                      ? "border-emerald-400 bg-emerald-500/15 text-emerald-200"
+                      : "border-white/10 bg-slate-800 text-slate-300 hover:border-white/30"
+                  }`}
+                >
+                  <span>{source.icon}</span>
+                  {source.label}
+                </button>
+              ))}
+            </div>
+            {activeSource?.description && (
+              <p className="mt-2 text-xs text-slate-500">
+                {activeSource.description}
+              </p>
+            )}
+          </div>
 
-                setFormData((prev) => ({
-                  ...prev,
-                  source,
-                  category: source,
-                  // Salary always defaults back to the linked salary account.
-                  accountId:
-                    source === "Salary" && salaryAccount
-                      ? salaryAccount._id
-                      : prev.accountId,
-                }));
-              }}
-              options={incomeSources}
-            />
+          {/* Fields for the chosen source */}
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {(activeSource?.fields || []).map((field) => (
+              <FormField
+                key={field.key}
+                label={field.label + (field.required ? " *" : "")}
+                type={field.type}
+                help={field.help}
+                value={formData.fields[field.key] ?? ""}
+                onChange={(event) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    fields: {
+                      ...prev.fields,
+                      [field.key]: event.target.value,
+                    },
+                  }))
+                }
+              />
+            ))}
+          </div>
 
-            <FormField
-              label="Category"
-              type="select"
-              value={formData.category}
-              onChange={(event) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  category: event.target.value,
-                }))
-              }
-              options={incomeSources}
-            />
+          {/* Derived values, computed live */}
+          {(activeSource?.derived || []).length > 0 && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {activeSource.derived.map((derived) => {
+                const value = previewTotals.fields[derived.key] || 0;
+                const tone =
+                  derived.tone === "negative"
+                    ? "bg-rose-500/10 text-rose-200"
+                    : derived.tone === "positive"
+                      ? "bg-emerald-500/10 text-emerald-200"
+                      : "bg-slate-800 text-slate-300";
 
-            <FormField
-              label="Amount"
-              type="number"
-              value={formData.amount}
-              onChange={(event) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  amount: event.target.value,
-                }))
-              }
-              disabled={formData.source === "Salary"}
-            />
+                return (
+                  <div key={derived.key} className={`rounded-xl p-4 ${tone}`}>
+                    <p className="text-sm">{derived.label}</p>
+                    <p className="break-words text-2xl font-bold text-white">
+                      {money(value)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
+          {/* Budget inclusion */}
+          <div className="mt-5 rounded-xl border border-white/10 bg-slate-950 p-4">
+            {activeSource?.canToggleBudget ? (
+              <label className="flex items-start gap-3 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={formData.includeInBudget}
+                  onChange={(event) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      includeInBudget: event.target.checked,
+                    }))
+                  }
+                />
+                <span>
+                  Include in budget planning
+                  <span className="mt-1 block text-xs text-slate-500">
+                    {formData.includeInBudget
+                      ? `${money(previewTotals.budgetableAmount)} will be available to budget with.`
+                      : "This money still credits the account, but the budget won't plan against it."}
+                  </span>
+                </span>
+              </label>
+            ) : (
+              <p className="flex items-start gap-2 text-sm text-slate-400">
+                <FiLock className="mt-0.5 shrink-0" />
+                {activeSource?.label} always counts toward your budget.
+              </p>
+            )}
+          </div>
+
+          {/* Generic fields */}
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
             <FormField
-              label={isSalaryForm ? "Credit To (Salary Account)" : "Account"}
+              label="Account Credited"
               type="select"
               value={formData.accountId}
               onChange={(event) =>
@@ -1685,6 +1201,14 @@ export default function Income() {
               }
               placeholder="Select Account"
               options={accountOptions}
+            />
+
+            <FormField
+              label={activeSource?.payerLabel || "Received From"}
+              value={formData.payer}
+              onChange={(event) =>
+                setFormData((prev) => ({ ...prev, payer: event.target.value }))
+              }
             />
 
             <FormField
@@ -1701,36 +1225,39 @@ export default function Income() {
             />
 
             <FormField
-              label="Employer"
-              value={formData.employer}
-              onChange={(event) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  employer: event.target.value,
-                }))
-              }
-            />
-
-            <FormField
               label="Date"
               type="date"
               value={formData.date}
               onChange={(event) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  date: event.target.value,
-                }))
+                setFormData((prev) => ({ ...prev, date: event.target.value }))
               }
             />
 
             <FormField
-              label="Time"
-              type="time"
-              value={formData.time}
+              label="Budget Month"
+              type="select"
+              value={formData.periodMonth}
               onChange={(event) =>
                 setFormData((prev) => ({
                   ...prev,
-                  time: event.target.value,
+                  periodMonth: event.target.value,
+                }))
+              }
+              options={monthNames.map((name, index) => ({
+                value: index + 1,
+                label: name,
+              }))}
+              help="Which month's budget this income belongs to."
+            />
+
+            <FormField
+              label="Budget Year"
+              type="number"
+              value={formData.periodYear}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  periodYear: event.target.value,
                 }))
               }
             />
@@ -1746,12 +1273,12 @@ export default function Income() {
                   }))
                 }
               />
-              Recurring Income
+              Recurring
             </label>
 
             {formData.isRecurring && (
               <FormField
-                label="Recurring Type"
+                label="Repeats"
                 type="select"
                 value={formData.recurringType}
                 onChange={(event) =>
@@ -1765,155 +1292,81 @@ export default function Income() {
             )}
 
             <FormField
-              label="Attachments"
-              value={formData.attachments}
-              onChange={(event) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  attachments: event.target.value,
-                }))
-              }
-              placeholder="Comma separated links"
-              containerClassName="md:col-span-2"
-            />
-
-            <FormField
               label="Note"
               value={formData.note}
               onChange={(event) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  note: event.target.value,
-                }))
+                setFormData((prev) => ({ ...prev, note: event.target.value }))
               }
               containerClassName="md:col-span-3"
             />
           </div>
 
-          {formData.source === "Salary" && (
-            <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950 p-4">
-              <div className="mb-4 flex items-center gap-2">
-                <FiCalendar className="text-emerald-300" />
-                <h3 className="text-lg font-bold">Salary Breakdown</h3>
-              </div>
-              <div className="grid gap-3 md:grid-cols-4">
-                {[
-                  ["Gross Salary", "grossSalary"],
-                  ["Basic", "basic"],
-                  ["HRA", "hra"],
-                  ["Special Allowance", "specialAllowance"],
-                  ["Variable Pay", "variablePay"],
-                  ["Bonus", "bonus"],
-                  ["PF", "pf"],
-                  ["Professional Tax", "professionalTax"],
-                  ["Income Tax", "incomeTax"],
-                  ["Insurance", "insurance"],
-                  ["TDS", "tds"],
-                  ["Net Salary", "netSalary"],
-                ].map(([label, key]) => (
-                  <FormField
-                    key={key}
-                    label={label}
-                    type="number"
-                    value={key === "netSalary" ? salaryTotals.net : formData[key]}
-                    disabled={key === "netSalary"}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        [key]: event.target.value,
-                      }))
-                    }
-                  />
-                ))}
-                <FormField
-                  label="Salary Month"
-                  type="select"
-                  value={formData.salaryMonth}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      salaryMonth: event.target.value,
-                    }))
-                  }
-                  options={monthNames.map((month, index) => ({
-                    value: index + 1,
-                    label: month,
-                  }))}
-                />
-                <FormField
-                  label="Salary Year"
-                  type="number"
-                  value={formData.salaryYear}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      salaryYear: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-          )}
-
-          {isDepositAccountMismatched && (
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4">
-              <p className="flex items-start gap-2 text-sm text-amber-200">
-                <FiAlertTriangle className="mt-0.5 shrink-0" />
-                This salary entry is going to{" "}
-                {selectedDepositAccount?.name || "another account"}, not your
-                linked salary account {salaryAccount?.name}.
-              </p>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    accountId: salaryAccount._id,
-                  }))
-                }
-              >
-                Use salary account
-              </Button>
-            </div>
-          )}
-
-          <div className="mt-5 rounded-xl bg-slate-800 p-4">
-            <p className="text-sm text-slate-400">
-              Balance After Credit
-              {selectedDepositAccount ? ` - ${selectedDepositAccount.name}` : ""}
-            </p>
-            <p className="mt-1 text-2xl font-bold text-emerald-300">
-              {money(balanceAfterCredit)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {money(selectedDepositAccount?.balance || 0)} +{" "}
-              {money(depositAmount)} credited on save
-            </p>
+          {/* Live credit preview */}
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <StatTile
+              label="Credits to account"
+              value={money(previewTotals.creditedAmount)}
+              tone="positive"
+              hint={selectedAccount?.name}
+            />
+            <StatTile
+              label="Budgetable"
+              value={money(
+                formData.includeInBudget ? previewTotals.budgetableAmount : 0,
+              )}
+            />
+            <StatTile
+              label="Balance after"
+              value={money(
+                Number(selectedAccount?.balance || 0) +
+                  previewTotals.creditedAmount,
+              )}
+              tone="muted"
+            />
           </div>
 
+          {previewTotals.epfAmount > 0 && (
+            <p
+              className={`mt-3 flex items-start gap-2 rounded-xl p-3 text-xs ${
+                epfAccount
+                  ? "bg-cyan-500/10 text-cyan-200"
+                  : "bg-amber-500/10 text-amber-200"
+              }`}
+            >
+              <FiAlertTriangle className="mt-0.5 shrink-0" />
+              {epfAccount
+                ? `${money(previewTotals.epfAmount)} goes to ${epfAccount.name}, not your bank. It is never budgetable.`
+                : `${money(previewTotals.epfAmount)} EPF will be recorded but not credited anywhere - link an EPF account on the Accounts page.`}
+            </p>
+          )}
+
           <div className="mt-6 flex justify-end gap-3">
-            <Button variant="secondary" onClick={closeModal} disabled={saving}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowModal(false);
+                setEditingIncome(null);
+              }}
+              disabled={saving}
+            >
               Cancel
             </Button>
-            <Button onClick={handleSaveIncome} loading={saving}>
-              Save
+            <Button onClick={handleSave} loading={saving}>
+              {editingIncome ? "Save Changes" : "Add Income"}
             </Button>
           </div>
         </Modal>
 
         <ConfirmDialog
           isOpen={!!deleteTarget}
-          onClose={() => setDeleteTarget(null)}
-          onConfirm={handleDeleteIncome}
-          title="Delete income entry?"
-          message={
-            deleteTarget
-              ? `This will permanently delete this ${deleteTarget.source} income entry of ${money(
-                  getIncomeAmount(deleteTarget),
-                )}. This action cannot be undone.`
-              : ""
-          }
-          confirmLabel="Delete"
+          onClose={() => {
+            setDeleteTarget(null);
+            setDeleteImpact(null);
+          }}
+          onConfirm={handleDelete}
+          title="Delete this income entry?"
+          message={deleteMessage()}
+          confirmLabel="Delete and reverse"
           loading={deleting}
         />
       </div>

@@ -5,6 +5,7 @@ import {
   getAccountsByUser,
   updateAccount,
   deleteAccount,
+  getAccountDeleteImpact,
 } from "../controllers/accountController.js";
 
 const router = express.Router();
@@ -12,6 +13,8 @@ const router = express.Router();
 router.post("/", createAccount);
 
 router.get("/user/:userId", getAccountsByUser);
+
+router.get("/:id/delete-impact", getAccountDeleteImpact);
 
 router.put("/:id", updateAccount);
 
