@@ -19,7 +19,9 @@ export const updateIncome = async (id, incomeData) => {
 };
 
 export const getIncomeSummary = async (userId) => {
-  return api.get(`/income/summary/${userId}`);
+  const response = await api.get(`/income/summary/${userId}`);
+
+  return response.data;
 };
 
 export const deleteIncome = async (id) => {

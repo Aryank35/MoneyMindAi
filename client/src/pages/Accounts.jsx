@@ -7,6 +7,7 @@ import {
   getAccountsByUser,
   deleteAccount,
   updateAccount,
+  setSalaryAccount,
 } from "../services/accountService";
 
 import { getUserId } from "../utils/auth";
@@ -42,6 +43,7 @@ export default function Accounts() {
     name: "",
     type: "Bank",
     balance: "",
+    isSalaryAccount: false,
   });
 
   const accountThemes = {
@@ -110,6 +112,7 @@ export default function Accounts() {
         name: "",
         type: "Bank",
         balance: "",
+        isSalaryAccount: false,
       });
 
       setShowCreateModal(false);
@@ -175,6 +178,7 @@ export default function Accounts() {
         name: "",
         type: "Bank",
         balance: "",
+        isSalaryAccount: false,
       });
 
       await loadAccounts();
@@ -189,10 +193,30 @@ export default function Accounts() {
     }
   };
 
+  const handleSetSalaryAccount = async (account) => {
+    if (account.isSalaryAccount) return;
+
+    try {
+      await setSalaryAccount(account._id);
+
+      await loadAccounts();
+
+      toast.success(`${account.name} is now your salary account`);
+    } catch (error) {
+      console.error(error);
+
+      toast.error(
+        error?.response?.data?.message || "Failed to set salary account",
+      );
+    }
+  };
+
   const totalAssets = accounts.reduce(
     (sum, account) => sum + Number(account.balance || 0),
     0,
   );
+
+  const salaryAccount = accounts.find((account) => account.isSalaryAccount);
 
   return (
     <DashboardLayout>
@@ -223,6 +247,12 @@ export default function Accounts() {
           </h2>
 
           <p className="mt-3 opacity-80">Across {accounts.length} accounts</p>
+
+          <p className="mt-2 text-sm opacity-90">
+            {salaryAccount
+              ? `Salary is credited to ${salaryAccount.name} — the income page is linked to it.`
+              : "No salary account linked yet. Mark one below so income entries land in the right place."}
+          </p>
         </div>
 
         <Button onClick={() => setShowCreateModal(true)} className="mb-8">
@@ -284,6 +314,12 @@ export default function Accounts() {
 
                   <p className="opacity-80">{account.type}</p>
 
+                  {account.isSalaryAccount && (
+                    <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
+                      💰 Salary Account
+                    </span>
+                  )}
+
                   <h3 className="text-4xl font-bold mt-4">
                     ₹{Number(account.balance).toLocaleString()}
                   </h3>
@@ -301,50 +337,48 @@ export default function Accounts() {
                     <p className="text-xs mt-2">{allocation}% of assets</p>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      setSelectedAccount(account);
+                  <div className="mt-6 space-y-2">
+                    {!account.isSalaryAccount && (
+                      <button
+                        onClick={() => handleSetSalaryAccount(account)}
+                        aria-label={`Set ${account.name} as salary account`}
+                        className="w-full rounded-xl bg-white/10 py-2 transition hover:bg-white/20"
+                      >
+                        Set as Salary Account
+                      </button>
+                    )}
 
-                      setShowDeleteModal(true);
-                    }}
-                    aria-label={`Delete ${account.name}`}
-                    className="
-              mt-6
-              w-full
-              py-2
-              rounded-xl
-              bg-red-500/20
-              text-red-200
-            "
-                  >
-                    Delete
-                  </button>
+                    <button
+                      onClick={() => {
+                        setEditingAccount(account);
 
-                  <button
-                    onClick={() => {
-                      setEditingAccount(account);
+                        setFormData({
+                          name: account.name,
+                          type: account.type,
+                          balance: account.balance,
+                          isSalaryAccount: Boolean(account.isSalaryAccount),
+                        });
 
-                      setFormData({
-                        name: account.name,
-                        type: account.type,
-                        balance: account.balance,
-                      });
+                        setShowEditModal(true);
+                      }}
+                      aria-label={`Edit ${account.name}`}
+                      className="w-full rounded-xl bg-white/10 py-2 transition hover:bg-white/20"
+                    >
+                      Edit
+                    </button>
 
-                      setShowEditModal(true);
-                    }}
-                    aria-label={`Edit ${account.name}`}
-                    className="
-    mt-2
-              w-full
-              py-2
-              rounded-xl
-              bg-white/10
-              hover:bg-white/20
-              transition
-  "
-                  >
-                    Edit
-                  </button>
+                    <button
+                      onClick={() => {
+                        setSelectedAccount(account);
+
+                        setShowDeleteModal(true);
+                      }}
+                      aria-label={`Delete ${account.name}`}
+                      className="w-full rounded-xl bg-red-500/20 py-2 text-red-200 transition hover:bg-red-500/30"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </motion.div>
               );
             })}
@@ -398,6 +432,27 @@ export default function Accounts() {
                 })
               }
             />
+
+            <label className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={Boolean(formData.isSalaryAccount)}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    isSalaryAccount: e.target.checked,
+                  })
+                }
+              />
+              <span>
+                Salary Account
+                <span className="mt-1 block text-xs text-slate-500">
+                  Salary income on the income page is credited here. Only one
+                  account can hold this.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
@@ -509,6 +564,27 @@ export default function Accounts() {
                 })
               }
             />
+
+            <label className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={Boolean(formData.isSalaryAccount)}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    isSalaryAccount: e.target.checked,
+                  })
+                }
+              />
+              <span>
+                Salary Account
+                <span className="mt-1 block text-xs text-slate-500">
+                  Salary income on the income page is credited here. Only one
+                  account can hold this.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div className="flex justify-end gap-3 mt-6">

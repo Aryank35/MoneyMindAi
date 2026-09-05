@@ -48,6 +48,11 @@ const accountSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    isSalaryAccount: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

@@ -1,7 +1,10 @@
 import Income from "../models/Income.js";
 import Account from "../models/Account.js";
 
-const validateIncome = ({ source, amount, accountId }) => {
+const isSalaryEntry = ({ source, category }) =>
+  source === "Salary" || category === "Salary";
+
+const validateIncome = ({ source, amount }) => {
   if (!source?.trim()) {
     return "Source is required";
   }
@@ -10,11 +13,47 @@ const validateIncome = ({ source, amount, accountId }) => {
     return "Amount must be greater than 0";
   }
 
-  if (!accountId) {
-    return "Account is required";
+  return null;
+};
+
+export const findSalaryAccount = (userId) =>
+  Account.findOne({
+    userId,
+    isSalaryAccount: true,
+  });
+
+// Salary entries fall back to the user's designated salary account so the
+// income page stays linked to it even when the form doesn't send an account.
+const resolveIncomeAccount = async (body) => {
+  if (body.accountId) {
+    const account = await Account.findById(body.accountId);
+
+    if (!account) {
+      return { error: "Account not found", status: 404 };
+    }
+
+    if (body.userId && String(account.userId) !== String(body.userId)) {
+      return { error: "Account does not belong to this user", status: 403 };
+    }
+
+    return { account };
   }
 
-  return null;
+  if (isSalaryEntry(body) && body.userId) {
+    const salaryAccount = await findSalaryAccount(body.userId);
+
+    if (salaryAccount) {
+      return { account: salaryAccount };
+    }
+
+    return {
+      error:
+        "No salary account is linked yet. Set one from the Accounts page or pick an account.",
+      status: 400,
+    };
+  }
+
+  return { error: "Account is required", status: 400 };
 };
 
 export const createIncome = async (req, res) => {
@@ -28,17 +67,18 @@ export const createIncome = async (req, res) => {
       });
     }
 
-    const account = await Account.findById(req.body.accountId);
+    const { account, error, status } = await resolveIncomeAccount(req.body);
 
-    if (!account) {
-      return res.status(404).json({
+    if (error) {
+      return res.status(status).json({
         success: false,
-        message: "Account not found",
+        message: error,
       });
     }
 
     const income = await Income.create({
       ...req.body,
+      accountId: account._id,
       source: req.body.source.trim(),
       amount: Number(req.body.amount),
       note: req.body.note?.trim() || "",
@@ -84,12 +124,11 @@ export const getIncomeByUser = async (req, res) => {
 
 export const updateIncome = async (req, res) => {
   try {
-    const { source, amount, accountId } = req.body;
+    const { source, amount } = req.body;
 
     const validationError = validateIncome({
       source,
       amount,
-      accountId,
     });
 
     if (validationError) {
@@ -108,17 +147,24 @@ export const updateIncome = async (req, res) => {
       });
     }
 
-    const newAccount = await Account.findById(accountId);
+    const {
+      account: newAccount,
+      error,
+      status,
+    } = await resolveIncomeAccount({
+      ...req.body,
+      userId: req.body.userId || existingIncome.userId,
+    });
 
-    if (!newAccount) {
-      return res.status(404).json({
+    if (error) {
+      return res.status(status).json({
         success: false,
-        message: "Account not found",
+        message: error,
       });
     }
 
     const oldAccountId = String(existingIncome.accountId);
-    const newAccountId = String(accountId);
+    const newAccountId = String(newAccount._id);
     const oldAmount = Number(existingIncome.amount || 0);
     const newAmount = Number(amount);
 
@@ -139,6 +185,7 @@ export const updateIncome = async (req, res) => {
 
     existingIncome.set({
       ...req.body,
+      accountId: newAccount._id,
       source: source.trim(),
       amount: newAmount,
       note: req.body.note?.trim() || "",
@@ -182,6 +229,97 @@ export const deleteIncome = async (req, res) => {
     res.json({
       success: true,
       message: "Income deleted successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Per-account rollup used by the income page to show how the linked salary
+// account is actually being fed. `amount` is the figure that hits the account
+// balance, so the summary and the account cards can never disagree.
+export const getIncomeSummary = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [incomes, accounts] = await Promise.all([
+      Income.find({ userId }).sort({ incomeDate: -1 }),
+      Account.find({ userId }),
+    ]);
+
+    const now = new Date();
+    const isThisMonth = (date) => {
+      const value = new Date(date);
+
+      return (
+        value.getMonth() === now.getMonth() &&
+        value.getFullYear() === now.getFullYear()
+      );
+    };
+
+    const credited = (income) => Number(income.amount || 0);
+
+    const salaryIncomes = incomes.filter(isSalaryEntry);
+
+    const total = incomes.reduce((sum, income) => sum + credited(income), 0);
+    const salaryTotal = salaryIncomes.reduce(
+      (sum, income) => sum + credited(income),
+      0,
+    );
+
+    const byAccount = accounts.map((account) => {
+      const accountIncomes = incomes.filter(
+        (income) => String(income.accountId) === String(account._id),
+      );
+
+      return {
+        accountId: account._id,
+        name: account.name,
+        type: account.type,
+        balance: account.balance,
+        isSalaryAccount: account.isSalaryAccount,
+        count: accountIncomes.length,
+        total: accountIncomes.reduce((sum, income) => sum + credited(income), 0),
+        salaryTotal: accountIncomes
+          .filter(isSalaryEntry)
+          .reduce((sum, income) => sum + credited(income), 0),
+      };
+    });
+
+    const salaryAccount = accounts.find((account) => account.isSalaryAccount);
+    const lastSalary = salaryIncomes[0] || null;
+
+    const nextExpectedSalaryDate = lastSalary?.incomeDate
+      ? new Date(
+          now.getFullYear(),
+          now.getMonth() +
+            (now.getDate() >= new Date(lastSalary.incomeDate).getDate() ? 1 : 0),
+          new Date(lastSalary.incomeDate).getDate(),
+        )
+      : null;
+
+    res.json({
+      success: true,
+      data: {
+        salaryAccount: salaryAccount || null,
+        totals: {
+          total,
+          salaryTotal,
+          thisMonth: incomes
+            .filter((income) => isThisMonth(income.incomeDate))
+            .reduce((sum, income) => sum + credited(income), 0),
+          salaryThisMonth: salaryIncomes
+            .filter((income) => isThisMonth(income.incomeDate))
+            .reduce((sum, income) => sum + credited(income), 0),
+          salaryDependency: total ? Math.round((salaryTotal / total) * 100) : 0,
+        },
+        byAccount,
+        lastSalary,
+        nextExpectedSalaryDate,
+      },
     });
   } catch (error) {
     res.status(500).json({

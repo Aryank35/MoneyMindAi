@@ -18,6 +18,14 @@ export const updateAccount = async (id, data) => {
   return response.data;
 };
 
+export const setSalaryAccount = async (id) => {
+  const response = await api.put(`/accounts/${id}`, {
+    isSalaryAccount: true,
+  });
+
+  return response.data;
+};
+
 export const deleteAccount = async (id) => {
   const response = await api.delete(`/accounts/${id}`);
 

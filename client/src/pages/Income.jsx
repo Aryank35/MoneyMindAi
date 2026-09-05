@@ -1,9 +1,12 @@
 import DashboardLayout from "../components/layout/DashboardLayout";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { Link } from "react-router-dom";
 import {
+  FiAlertTriangle,
   FiCalendar,
   FiCheckCircle,
+  FiCreditCard,
   FiClock,
   FiEdit2,
   FiFilter,
@@ -219,6 +222,8 @@ export default function Income() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [formData, setFormData] = useState(createEmptyForm);
+  // Snapshot of the on-page draft while the edit modal borrows formData.
+  const salaryDraftRef = useRef(null);
   const [filters, setFilters] = useState({
     month: "all",
     year: "all",
@@ -250,9 +255,17 @@ export default function Income() {
 
       setIncomes(incomeResponse.data || []);
       setAccounts(loadedAccounts);
+      const linkedSalaryAccount = loadedAccounts.find(
+        (account) => account.isSalaryAccount,
+      );
+
       setFormData((prev) => ({
         ...prev,
-        accountId: prev.accountId || loadedAccounts[0]?._id || "",
+        accountId:
+          prev.accountId ||
+          linkedSalaryAccount?._id ||
+          loadedAccounts[0]?._id ||
+          "",
       }));
     } catch (error) {
       console.error(error);
@@ -279,6 +292,14 @@ export default function Income() {
       }, {}),
     [accounts],
   );
+
+  // The account flagged on the Accounts page is the one salary is credited to.
+  const salaryAccount = useMemo(
+    () => accounts.find((account) => account.isSalaryAccount) || null,
+    [accounts],
+  );
+
+  const defaultAccountId = salaryAccount?._id || accounts[0]?._id || "";
 
   const salaryTotals = useMemo(() => {
     const additions =
@@ -511,20 +532,120 @@ export default function Income() {
     [incomes],
   );
 
+  // Everything the "Salary Account" panel needs, measured against the linked
+  // account rather than against income rows in isolation.
+  const salaryAccountStats = useMemo(() => {
+    if (!salaryAccount) return null;
+
+    const creditedHere = incomes.filter(
+      (income) => String(income.accountId) === String(salaryAccount._id),
+    );
+    const salaryCredits = creditedHere
+      .filter((income) => income.source === "Salary")
+      .sort((a, b) => new Date(b.incomeDate) - new Date(a.incomeDate));
+    const now = new Date();
+    const lastCredit = salaryCredits[0] || null;
+    const lastCreditDate = lastCredit?.incomeDate
+      ? new Date(lastCredit.incomeDate)
+      : null;
+
+    return {
+      creditedCount: creditedHere.length,
+      totalCredited: creditedHere.reduce(
+        (sum, income) => sum + getIncomeAmount(income),
+        0,
+      ),
+      salaryCredited: salaryCredits.reduce(
+        (sum, income) => sum + getIncomeAmount(income),
+        0,
+      ),
+      thisMonthCredited: creditedHere
+        .filter((income) => {
+          const date = new Date(income.incomeDate);
+          return (
+            date.getMonth() === now.getMonth() &&
+            date.getFullYear() === now.getFullYear()
+          );
+        })
+        .reduce((sum, income) => sum + getIncomeAmount(income), 0),
+      lastCredit,
+      lastCreditDate,
+      nextCreditDate: lastCreditDate
+        ? new Date(
+            now.getFullYear(),
+            now.getMonth() +
+              (now.getDate() >= lastCreditDate.getDate() ? 1 : 0),
+            lastCreditDate.getDate(),
+          )
+        : null,
+      // Salary rows that were parked somewhere other than the linked account.
+      straySalaryCount: incomes.filter(
+        (income) =>
+          income.source === "Salary" &&
+          String(income.accountId) !== String(salaryAccount._id),
+      ).length,
+    };
+  }, [incomes, salaryAccount]);
+
+  const accountOptions = useMemo(
+    () =>
+      accounts.map((account) => ({
+        value: account._id,
+        label: account.isSalaryAccount
+          ? `${account.name} - Salary Account`
+          : account.name,
+      })),
+    [accounts],
+  );
+
+  const isSalaryForm = formData.source === "Salary";
+  const isDepositAccountMismatched = Boolean(
+    isSalaryForm &&
+      salaryAccount &&
+      formData.accountId &&
+      String(formData.accountId) !== String(salaryAccount._id),
+  );
+
   const hasIncomeData = incomes.length > 0;
   const hasChartData = sourceData.length > 0;
 
+  // The on-page Salary Calculator and Salary Account panel write into the same
+  // formData the modal uses, so opening the modal must carry that draft over
+  // instead of blanking it.
   const openAddModal = () => {
     setEditingIncome(null);
+    setFormData((prev) => ({
+      ...prev,
+      accountId: prev.accountId || defaultAccountId,
+    }));
+    setShowModal(true);
+  };
+
+  // "Add Salary Credit" from the calculator: force the salary shape and point
+  // the entry at the linked salary account.
+  const openSalaryModal = () => {
+    setEditingIncome(null);
+    setFormData((prev) => ({
+      ...prev,
+      source: "Salary",
+      category: "Salary",
+      accountId: salaryAccount?._id || prev.accountId || defaultAccountId,
+    }));
+    setShowModal(true);
+  };
+
+  const resetSalaryDraft = () => {
     setFormData({
       ...createEmptyForm(),
-      accountId: accounts[0]?._id || "",
+      accountId: defaultAccountId,
     });
-    setShowModal(true);
+    toast.success("Salary draft cleared");
   };
 
   const openEditModal = (income) => {
     const date = income.incomeDate ? new Date(income.incomeDate) : new Date();
+
+    salaryDraftRef.current = formData;
 
     setEditingIncome(income);
     setFormData({
@@ -546,7 +667,7 @@ export default function Income() {
       attachments: Array.isArray(income.attachments)
         ? income.attachments.join(", ")
         : income.attachments || "",
-      accountId: income.accountId || accounts[0]?._id || "",
+      accountId: income.accountId || defaultAccountId,
       date: date.toISOString().split("T")[0],
       time: date.toTimeString().slice(0, 5),
     });
@@ -555,12 +676,24 @@ export default function Income() {
 
   const closeModal = () => {
     setShowModal(false);
+
+    if (editingIncome && salaryDraftRef.current) {
+      setFormData(salaryDraftRef.current);
+      salaryDraftRef.current = null;
+    }
+
     setEditingIncome(null);
   };
 
   const handleSaveIncome = async () => {
+    const wasEditing = Boolean(editingIncome);
+
     if (!formData.accountId) {
-      toast.error("Please select deposit account");
+      toast.error(
+        salaryAccount
+          ? "Please select deposit account"
+          : "Link a salary account on the Accounts page, or pick an account",
+      );
       return;
     }
 
@@ -618,6 +751,18 @@ export default function Income() {
       }
 
       closeModal();
+
+      // Keep the salary structure on the page - it repeats month to month -
+      // but clear the one-off fields so the next credit starts clean.
+      if (!wasEditing) {
+        setFormData((prev) => ({
+          ...prev,
+          amount: "",
+          note: "",
+          attachments: "",
+        }));
+      }
+
       await loadIncomePage();
     } catch (error) {
       console.error("Income Save Error:", error);
@@ -825,7 +970,18 @@ export default function Income() {
 
         <motion.section {...motionProps(0.15)} className="mb-6 grid gap-6 xl:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <h2 className="text-xl font-bold">Salary Calculator</h2>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold">Salary Calculator</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  This draft carries straight into the income entry - nothing
+                  you type here is thrown away.
+                </p>
+              </div>
+              <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                Draft
+              </span>
+            </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {[
                 ["CTC / Gross Salary", "grossSalary"],
@@ -865,16 +1021,133 @@ export default function Income() {
                 <p className="break-words text-2xl font-bold">{money(salaryTotals.net)}</p>
               </div>
             </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button onClick={openSalaryModal} disabled={salaryTotals.net <= 0}>
+                Add Salary Credit
+              </Button>
+              <Button variant="secondary" onClick={resetSalaryDraft}>
+                Clear
+              </Button>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
-            <h2 className="text-xl font-bold">Account Integration</h2>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold">Salary Account</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Where salary lands and how the balance moves.
+                </p>
+              </div>
+              <Link
+                to="/accounts"
+                className="rounded-xl bg-white/10 px-3 py-2 text-sm transition hover:bg-white/20"
+              >
+                Manage
+              </Link>
+            </div>
+
+            {!salaryAccount ? (
+              <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4">
+                <p className="flex items-start gap-2 text-sm text-amber-200">
+                  <FiAlertTriangle className="mt-0.5 shrink-0" />
+                  No salary account is linked yet, so salary income has no fixed
+                  home. Mark one account as your salary account and this page
+                  stays in sync with it.
+                </p>
+                <Link
+                  to="/accounts"
+                  className="mt-4 inline-flex rounded-xl bg-emerald-500 px-4 py-2 font-semibold text-slate-950 transition-colors hover:bg-emerald-400"
+                >
+                  Link a salary account
+                </Link>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl bg-slate-800/80 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <FiCreditCard className="text-emerald-300" />
+                    <span className="font-semibold">{salaryAccount.name}</span>
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">
+                      {salaryAccount.type}
+                    </span>
+                  </div>
+                  <span className="flex items-center gap-1 text-xs text-emerald-300">
+                    <FiCheckCircle />
+                    Linked
+                  </span>
+                </div>
+
+                <p className="mt-3 text-sm text-slate-400">Current Balance</p>
+                <p className="break-words text-3xl font-bold text-emerald-300">
+                  {money(salaryAccount.balance)}
+                </p>
+
+                <div className="my-4 h-px bg-white/10" />
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-sm text-slate-400">Last Salary Credit</p>
+                    <p className="break-words text-lg font-semibold">
+                      {salaryAccountStats?.lastCredit
+                        ? money(getIncomeAmount(salaryAccountStats.lastCredit))
+                        : "-"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {salaryAccountStats?.lastCreditDate
+                        ? formatDate(salaryAccountStats.lastCreditDate)
+                        : "No salary credited yet"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Next Expected</p>
+                    <p className="break-words text-lg font-semibold text-cyan-300">
+                      {salaryAccountStats?.nextCreditDate
+                        ? formatDayMonth(salaryAccountStats.nextCreditDate)
+                        : "-"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {salaryAccountStats?.creditedCount || 0} credits recorded
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Salary Credited</p>
+                    <p className="break-words text-lg font-semibold">
+                      {money(salaryAccountStats?.salaryCredited)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Credited This Month</p>
+                    <p className="break-words text-lg font-semibold">
+                      {money(salaryAccountStats?.thisMonthCredited)}
+                    </p>
+                  </div>
+                </div>
+
+                {salaryAccountStats?.straySalaryCount > 0 && (
+                  <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-200">
+                    <FiAlertTriangle className="mt-0.5 shrink-0" />
+                    {salaryAccountStats.straySalaryCount} salary entr
+                    {salaryAccountStats.straySalaryCount === 1
+                      ? "y is"
+                      : "ies are"}{" "}
+                    credited to a different account.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="mt-4 rounded-xl bg-slate-800/80 p-4">
-              <p className="text-sm text-slate-400">Salary</p>
+              <p className="text-sm text-slate-400">
+                Pending {isSalaryForm ? "Salary" : formData.source} Credit
+              </p>
               <p className="mt-1 break-words text-3xl font-bold text-emerald-300">
                 {money(depositAmount)}
               </p>
+
               <div className="my-4 h-px bg-white/10" />
+
               <FormField
                 label="Deposit To"
                 type="select"
@@ -886,11 +1159,25 @@ export default function Income() {
                   }))
                 }
                 placeholder="Select Account"
-                options={accounts.map((account) => ({
-                  value: account._id,
-                  label: account.name,
-                }))}
+                options={accountOptions}
               />
+
+              {isDepositAccountMismatched && (
+                <button
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      accountId: salaryAccount._id,
+                    }))
+                  }
+                  className="mt-2 flex w-full items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-left text-xs text-amber-200 transition hover:bg-amber-500/20"
+                >
+                  <FiAlertTriangle className="shrink-0" />
+                  Salary usually goes to {salaryAccount.name}. Tap to switch
+                  back.
+                </button>
+              )}
+
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-sm text-slate-400">Current Balance</p>
@@ -905,7 +1192,10 @@ export default function Income() {
                   </p>
                 </div>
               </div>
-              <p className="mt-4 text-sm text-slate-400">Live preview</p>
+
+              <p className="mt-4 text-sm text-slate-400">
+                Live preview - applied when you save the entry.
+              </p>
             </div>
           </div>
         </motion.section>
@@ -1166,9 +1456,9 @@ export default function Income() {
               className="rounded-xl border border-white/10 bg-slate-800 p-3"
             >
               <option value="all">Account</option>
-              {accounts.map((account) => (
-                <option key={account._id} value={account._id}>
-                  {account.name}
+              {accountOptions.map((account) => (
+                <option key={account.value} value={account.value}>
+                  {account.label}
                 </option>
               ))}
             </select>
@@ -1266,7 +1556,14 @@ export default function Income() {
                     <tr key={income._id} className="border-t border-white/5">
                       <td className="p-4">{formatDate(income.incomeDate)}</td>
                       <td className="p-4">
-                        {accountMap[income.accountId]?.name || "-"}
+                        <span className="flex items-center gap-2">
+                          {accountMap[income.accountId]?.name || "-"}
+                          {accountMap[income.accountId]?.isSalaryAccount && (
+                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">
+                              Salary
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="p-4">{income.source}</td>
                       <td className="p-4">{income.category || income.source}</td>
@@ -1333,13 +1630,20 @@ export default function Income() {
               label="Source"
               type="select"
               value={formData.source}
-              onChange={(event) =>
+              onChange={(event) => {
+                const source = event.target.value;
+
                 setFormData((prev) => ({
                   ...prev,
-                  source: event.target.value,
-                  category: event.target.value,
-                }))
-              }
+                  source,
+                  category: source,
+                  // Salary always defaults back to the linked salary account.
+                  accountId:
+                    source === "Salary" && salaryAccount
+                      ? salaryAccount._id
+                      : prev.accountId,
+                }));
+              }}
               options={incomeSources}
             />
 
@@ -1370,7 +1674,7 @@ export default function Income() {
             />
 
             <FormField
-              label="Account"
+              label={isSalaryForm ? "Credit To (Salary Account)" : "Account"}
               type="select"
               value={formData.accountId}
               onChange={(event) =>
@@ -1380,10 +1684,7 @@ export default function Income() {
                 }))
               }
               placeholder="Select Account"
-              options={accounts.map((account) => ({
-                value: account._id,
-                label: account.name,
-              }))}
+              options={accountOptions}
             />
 
             <FormField
@@ -1554,10 +1855,39 @@ export default function Income() {
             </div>
           )}
 
+          {isDepositAccountMismatched && (
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4">
+              <p className="flex items-start gap-2 text-sm text-amber-200">
+                <FiAlertTriangle className="mt-0.5 shrink-0" />
+                This salary entry is going to{" "}
+                {selectedDepositAccount?.name || "another account"}, not your
+                linked salary account {salaryAccount?.name}.
+              </p>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    accountId: salaryAccount._id,
+                  }))
+                }
+              >
+                Use salary account
+              </Button>
+            </div>
+          )}
+
           <div className="mt-5 rounded-xl bg-slate-800 p-4">
-            <p className="text-sm text-slate-400">Balance After Credit</p>
+            <p className="text-sm text-slate-400">
+              Balance After Credit
+              {selectedDepositAccount ? ` - ${selectedDepositAccount.name}` : ""}
+            </p>
             <p className="mt-1 text-2xl font-bold text-emerald-300">
               {money(balanceAfterCredit)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {money(selectedDepositAccount?.balance || 0)} +{" "}
+              {money(depositAmount)} credited on save
             </p>
           </div>
 
