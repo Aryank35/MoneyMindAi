@@ -8,6 +8,28 @@ const wishlistSchema = new mongoose.Schema(
       required: true,
     },
 
+    // A wishlist goal and an emergency fund are the same container with a
+    // different purpose, so they share this model.
+    kind: {
+      type: String,
+      enum: ["goal", "emergency"],
+      default: "goal",
+    },
+
+    // Where the money physically sits:
+    //   pot        the pot holds its own balance, fed by transfers from
+    //              accounts (money genuinely set aside)
+    //   account    the pot mirrors a linked account's balance
+    //   investment the pot mirrors a linked investment's current value
+    //
+    // Mirroring matters for an emergency fund already parked in an FD or a
+    // savings account - holding a second balance would double-count it.
+    backing: {
+      type: String,
+      enum: ["pot", "account", "investment"],
+      default: "pot",
+    },
+
     // Goal Name
     itemName: {
       type: String,
@@ -48,10 +70,10 @@ const wishlistSchema = new mongoose.Schema(
       default: "Medium",
     },
 
-    // Goal Deadline
+    // Goal Deadline. Optional: an emergency fund is never "late".
     targetDate: {
       type: Date,
-      required: true,
+      default: null,
     },
 
     // Days Left
@@ -106,6 +128,13 @@ const wishlistSchema = new mongoose.Schema(
       default: null,
     },
 
+    // For a pot backed by an FD, RD or any other holding.
+    linkedInvestmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Investment",
+      default: null,
+    },
+
     // Auto Save
     autoSaveEnabled: {
       type: Boolean,
@@ -139,6 +168,14 @@ const wishlistSchema = new mongoose.Schema(
     savingsHistory: [
       {
         amount: Number,
+
+        // Which way the money moved, so a withdrawal is not read as a
+        // contribution when progress is recomputed.
+        direction: {
+          type: String,
+          enum: ["in", "out"],
+          default: "in",
+        },
 
         accountId: {
           type: mongoose.Schema.Types.ObjectId,

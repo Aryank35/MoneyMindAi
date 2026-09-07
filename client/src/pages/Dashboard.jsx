@@ -1,5 +1,7 @@
+import { Link } from "react-router-dom";
 import DashboardLayout from "../components/layout/DashboardLayout";
 import AccountCard from "../components/common/AccountCard";
+import { getPotOverview } from "../services/potService";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -44,6 +46,8 @@ const itemVariants = {
 };
 
 export default function Dashboard() {
+  const [pots, setPots] = useState([]);
+
   const [dashboardData, setDashboardData] = useState(null);
 
   const [loading, setLoading] = useState(true);
@@ -75,6 +79,31 @@ export default function Dashboard() {
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // Pots come from their own endpoint rather than the dashboard aggregate,
+  // so a slow pot query never holds up the headline figures.
+  useEffect(() => {
+    let cancelled = false;
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const userId = getUserId();
+
+        if (!userId) return;
+
+        const response = await getPotOverview(userId);
+
+        if (!cancelled) setPots(response.data?.pots || []);
+      } catch (error) {
+        console.error("Pot fetch error:", error);
+      }
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
     };
   }, []);
 
@@ -140,29 +169,18 @@ export default function Dashboard() {
     0,
   );
 
-  const savingsPots = [
-    {
-      name: "Trip Fund",
-      current: 3000,
-      target: 50000,
-      color: "bg-indigo-500",
-      icon: "✈️",
-    },
-    {
-      name: "Events Fund",
-      current: 1800,
-      target: 20000,
-      color: "bg-purple-500",
-      icon: "🎉",
-    },
-    {
-      name: "LIC Fund",
-      current: 1200,
-      target: 6000,
-      color: "bg-emerald-500",
-      icon: "🛡️",
-    },
-  ];
+  // Real pots, loaded below. This was a hardcoded array of three invented
+  // funds, which meant the dashboard showed savings that did not exist.
+  const savingsPots = (pots || []).map((pot) => ({
+    id: pot._id,
+    name: pot.itemName,
+    current: pot.savedAmount,
+    target: pot.targetAmount,
+    icon: pot.potIcon,
+    percent: pot.progressPercentage,
+    status: pot.status,
+    isMirrored: pot.isMirrored,
+  }));
 
   const allocations = [
     { name: "Food", amount: 10000 },
@@ -478,33 +496,39 @@ export default function Dashboard() {
           animate="show"
           className="space-y-4"
         >
-          {savingsPots.map((pot) => {
-            const percent =
-              pot.target > 0
-                ? Math.min(Math.round((pot.current / pot.target) * 100), 100)
-                : 0;
-
-            return (
-              <motion.div key={pot.name} variants={itemVariants}>
-                <div className="flex justify-between">
-                  <span>
+          {savingsPots.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              No pots yet.{" "}
+              <Link to="/pots" className="text-indigo-300 underline">
+                Create one
+              </Link>{" "}
+              to start setting money aside.
+            </p>
+          ) : (
+            savingsPots.map((pot) => (
+              <motion.div key={pot.id} variants={itemVariants}>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span className="truncate">
                     {pot.icon} {pot.name}
+                    {pot.isMirrored && (
+                      <span className="ml-2 text-xs text-cyan-300">linked</span>
+                    )}
                   </span>
-                  <span>
-                    ₹{pot.current.toLocaleString()} / ₹
-                    {pot.target.toLocaleString()}
+                  <span className="text-slate-300">
+                    ₹{Number(pot.current).toLocaleString()} / ₹
+                    {Number(pot.target).toLocaleString()}
                   </span>
                 </div>
 
-                <div className="w-full h-2 bg-slate-700 rounded-full mt-2">
+                <div className="mt-2 h-1.5 w-full rounded-full bg-white/5">
                   <div
-                    className={`h-2 ${pot.color} rounded-full`}
-                    style={{ width: `${percent}%` }}
+                    className="h-1.5 rounded-full bg-emerald-400"
+                    style={{ width: `${Math.min(pot.percent, 100)}%` }}
                   />
                 </div>
               </motion.div>
-            );
-          })}
+            ))
+          )}
         </motion.div>
       </div>
 

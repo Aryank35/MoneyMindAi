@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   FiBarChart2,
+  FiCalendar,
   FiCreditCard,
   FiDollarSign,
   FiGrid,
@@ -13,6 +14,7 @@ import {
   FiRepeat,
   FiTarget,
   FiTrendingUp,
+  FiUsers,
   FiX,
 } from "react-icons/fi";
 
@@ -26,11 +28,13 @@ const PRIMARY = [
 ];
 
 const MORE = [
+  { label: "Planner", path: "/planner", icon: FiCalendar },
   { label: "Budget", path: "/budget", icon: FiTarget },
   { label: "Accounts", path: "/accounts", icon: FiCreditCard },
   { label: "Transfer", path: "/transfer", icon: FiRepeat },
   { label: "Investments", path: "/investments", icon: FiTrendingUp },
-  { label: "Wishlist", path: "/wishlist", icon: FiHeart },
+  { label: "Pots", path: "/pots", icon: FiHeart },
+  { label: "Lending", path: "/lending", icon: FiUsers },
   { label: "Analytics", path: "/analytics", icon: FiBarChart2 },
 ];
 

@@ -98,6 +98,9 @@ const buildPayload = (body, type) => {
     sipDay: body.isSip ? Number(body.sipDay) || undefined : undefined,
     accountId: body.accountId || null,
     goal: body.goal?.trim() || "",
+    onBehalfOf: body.onBehalfOf?.trim() || "",
+    isExternal: Boolean(body.onBehalfOf?.trim()) || body.isExternal === true,
+    includeInNetWorth: body.includeInNetWorth !== false,
     note: body.note?.trim() || "",
     valuedAt: new Date(),
   };
@@ -357,6 +360,22 @@ export const getPortfolio = async (req, res) => {
     res.json({
       success: true,
       data: {
+        external: {
+          count: investments.filter((item) => item.isExternal).length,
+          value: investments
+            .filter((item) => item.isExternal)
+            .reduce((sum, item) => sum + item.currentValue, 0),
+          // Someone else's capital working for the user: worth seeing, but
+          // kept out of the headline return so it does not flatter the
+          // user's own performance.
+          holders: [
+            ...new Set(
+              investments
+                .filter((item) => item.onBehalfOf)
+                .map((item) => item.onBehalfOf),
+            ),
+          ],
+        },
         totals: {
           invested: totalInvested,
           current: totalCurrent,

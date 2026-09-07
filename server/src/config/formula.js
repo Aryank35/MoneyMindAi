@@ -66,6 +66,14 @@ export const evaluateFormula = (formula, values = {}) => {
     case "max0":
       return Math.max(args[0] || 0, 0);
 
+    // Whole units. A recurring deposit is paid in discrete instalments, so
+    // the count has to be floored - there is no such thing as 5.99 of them.
+    case "floor":
+      return Math.floor(args[0] || 0);
+
+    case "ceil":
+      return Math.ceil(args[0] || 0);
+
     case "min":
       return Math.min(...args);
 

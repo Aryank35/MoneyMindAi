@@ -61,6 +61,7 @@ const emptyForm = (type) => ({
   name: "",
   platform: "",
   goal: "",
+  onBehalfOf: "",
   note: "",
   purchaseDate: new Date().toISOString().split("T")[0],
   isSip: false,
@@ -161,13 +162,30 @@ export default function Investments() {
   const preview = useMemo(() => {
     if (!activeType) return { invested: 0, current: 0, fields: {} };
 
-    const held = form.purchaseDate
-      ? Math.max((Date.now() - new Date(form.purchaseDate)) / MS_PER_YEAR, 0)
-      : 0;
+    const start = form.purchaseDate ? new Date(form.purchaseDate) : new Date();
+    const now = new Date();
+    const held = Math.max((now - start) / MS_PER_YEAR, 0);
+
+    // Whole calendar months, matching the server - including the month-end
+    // clamp, so an RD opened on the 31st counts February's instalment.
+    let calendarMonths =
+      (now.getFullYear() - start.getFullYear()) * 12 +
+      (now.getMonth() - start.getMonth());
+
+    const lastDayThisMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+    ).getDate();
+
+    if (now.getDate() < Math.min(start.getDate(), lastDayThisMonth)) {
+      calendarMonths -= 1;
+    }
 
     const values = resolveFields(activeType, form.fields, {
       _yearsHeld: held,
       _monthsHeld: held * 12,
+      _calendarMonthsHeld: Math.max(calendarMonths, 0),
     });
 
     return {
@@ -237,6 +255,7 @@ export default function Investments() {
       name: item.name || "",
       platform: item.platform || "",
       goal: item.goal || "",
+      onBehalfOf: item.onBehalfOf || "",
       note: item.note || "",
       purchaseDate: new Date(item.purchaseDate).toISOString().split("T")[0],
       isSip: Boolean(item.isSip),
@@ -264,6 +283,7 @@ export default function Investments() {
       name: prev.name,
       platform: prev.platform,
       goal: prev.goal,
+      onBehalfOf: prev.onBehalfOf,
       note: prev.note,
       purchaseDate: prev.purchaseDate,
     }));
@@ -284,6 +304,7 @@ export default function Investments() {
         name: form.name,
         platform: form.platform,
         goal: form.goal,
+        onBehalfOf: form.onBehalfOf,
         note: form.note,
         purchaseDate: form.purchaseDate,
         isSip: form.isSip,
@@ -713,6 +734,11 @@ export default function Investments() {
                                   SIP {money(item.sipAmount)}/mo
                                 </span>
                               )}
+                              {item.isExternal && (
+                                <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-xs text-cyan-200">
+                                  Held by {item.onBehalfOf || "another"}
+                                </span>
+                              )}
                             </p>
 
                             <p className="mt-1 text-xs text-slate-500">
@@ -903,6 +929,21 @@ export default function Investments() {
               value={form.goal}
               onChange={(e) => setForm({ ...form, goal: e.target.value })}
             />
+
+            <div>
+              <Input
+                label="Held by (optional)"
+                placeholder="Father"
+                value={form.onBehalfOf}
+                onChange={(e) =>
+                  setForm({ ...form, onBehalfOf: e.target.value })
+                }
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                For an FD or property someone holds for you. Tracked in your
+                portfolio and flagged as externally held.
+              </p>
+            </div>
 
             <label className="flex items-center gap-3 self-end rounded-xl bg-slate-800 p-3 text-sm text-slate-300">
               <input

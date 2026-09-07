@@ -5,7 +5,8 @@ import Signup from "../pages/Signup";
 import Dashboard from "../pages/Dashboard";
 import Expenses from "../pages/Expenses";
 import Budget from "../pages/Budget";
-import Wishlist from "../pages/Wishlist";
+import Pots from "../pages/Pots";
+import Lending from "../pages/Lending";
 import Investments from "../pages/Investments";
 import ProtectedRoute from "./ProtectedRoute";
 import Analytics from "../pages/Analytics";
@@ -13,6 +14,7 @@ import Income from "../pages/Income";
 import Accounts from "../pages/Accounts";
 import Transfer from "../pages/Transfer";
 import Cards from "../pages/Cards";
+import Planner from "../pages/Planner";
 import { getToken } from "../utils/auth";
 
 // The installed app launches at /dashboard, but a plain visit to "/" while
@@ -31,12 +33,14 @@ const PROTECTED = [
   { path: "/income", element: <Income /> },
   { path: "/expenses", element: <Expenses /> },
   { path: "/budget", element: <Budget /> },
-  { path: "/wishlist", element: <Wishlist /> },
+  { path: "/pots", element: <Pots /> },
+  { path: "/lending", element: <Lending /> },
   { path: "/investments", element: <Investments /> },
   { path: "/analytics", element: <Analytics /> },
   { path: "/accounts", element: <Accounts /> },
   { path: "/cards", element: <Cards /> },
   { path: "/transfer", element: <Transfer /> },
+  { path: "/planner", element: <Planner /> },
 ];
 
 export default function AppRoutes() {
@@ -50,6 +54,9 @@ export default function AppRoutes() {
         <Route path="/login" element={<LandingRoute />} />
 
         <Route path="/signup" element={<Signup />} />
+
+        {/* The wishlist became a funded pot; keep the old path working. */}
+        <Route path="/wishlist" element={<Navigate to="/pots" replace />} />
 
         {PROTECTED.map((route) => (
           <Route

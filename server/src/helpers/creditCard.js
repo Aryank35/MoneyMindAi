@@ -1,3 +1,5 @@
+import { clampToMonth } from "./dates.js";
+
 // =========================================================================
 // CREDIT CARD CYCLE MATH
 //
@@ -9,14 +11,9 @@
 // expressed as a positive number, which is how people actually talk about it.
 // =========================================================================
 
-// new Date(2026, 1, 31) silently rolls into March. Statement and due days are
-// user-chosen (a card can bill on the 31st), so every construction clamps to
-// the real length of the target month.
-export const clampToMonth = (year, month, day) => {
-  const lastDay = new Date(year, month + 1, 0).getDate();
-
-  return new Date(year, month, Math.min(Math.max(day, 1), lastDay));
-};
+// Shared with the recurrence helpers - a card billing on the 31st and a
+// bill due on the 31st need identical month-end handling.
+export { clampToMonth } from "./dates.js";
 
 export const getOutstanding = (balance) => Math.max(-Number(balance || 0), 0);
 
@@ -102,36 +99,5 @@ export const getCardCycle = (card = {}, today = new Date()) => {
   };
 };
 
-// Turns days-until-due into something the UI can colour and sort by, given
-// how much is actually owed.
-export const getDueStatus = (daysUntilDue, amountDue) => {
-  if (!(Number(amountDue) > 0)) {
-    return { key: "clear", label: "Nothing due", severity: 0 };
-  }
-
-  if (daysUntilDue < 0) {
-    return {
-      key: "overdue",
-      label: `Overdue by ${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) === 1 ? "" : "s"}`,
-      severity: 4,
-    };
-  }
-
-  if (daysUntilDue === 0) {
-    return { key: "today", label: "Due today", severity: 3 };
-  }
-
-  if (daysUntilDue <= 3) {
-    return {
-      key: "urgent",
-      label: `Due in ${daysUntilDue} day${daysUntilDue === 1 ? "" : "s"}`,
-      severity: 2,
-    };
-  }
-
-  if (daysUntilDue <= 7) {
-    return { key: "soon", label: `Due in ${daysUntilDue} days`, severity: 1 };
-  }
-
-  return { key: "scheduled", label: `Due in ${daysUntilDue} days`, severity: 0 };
-};
+// Shared with scheduled payments and lending promises.
+export { getDueStatus } from "./due.js";

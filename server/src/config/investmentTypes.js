@@ -215,34 +215,88 @@ export const INVESTMENT_TYPES = [
     ],
     derived: [
       {
-        // Only the instalments actually paid so far count as invested.
-        key: "invested",
-        label: "Deposited So Far",
+        // An RD is paid in whole instalments, and the first one goes in when
+        // the account is opened - so a brand-new RD already holds one
+        // instalment, and after n completed months it holds n + 1. Capped at
+        // the tenure. Counted off the calendar rather than fractional
+        // months: multiplying by days/30.44 produced part-instalments
+        // (Rs 29,997 instead of Rs 30,000), under-reported by a whole
+        // instalment throughout, and drifted enough over a year to miscount
+        // at the anniversary.
+        key: "instalmentsPaid",
+        label: "Instalments Paid",
         formula: {
-          op: "multiply",
-          args: ["monthlyAmount", { op: "min", args: ["_monthsHeld", "months"] }],
+          op: "min",
+          args: [
+            { op: "sum", args: ["_calendarMonthsHeld", 1] },
+            "months",
+          ],
         },
       },
       {
-        // Each instalment earns for roughly half the elapsed term on
-        // average, which is the standard approximation for an RD.
+        key: "invested",
+        label: "Deposited So Far",
+        formula: { op: "multiply", args: ["monthlyAmount", "instalmentsPaid"] },
+      },
+      {
+        // Interest on an RD accrues per instalment: the kth of n sits for
+        // (n - k) months, so the instalments collectively earn
+        // n(n-1)/2 month-deposits of interest at the monthly rate (r/1200).
+        // This is the standard RD formula. It replaces a "half the term on
+        // average" shortcut that ran about Rs 175 high over a year.
+        key: "interestEarned",
+        label: "Interest So Far",
+        formula: {
+          op: "multiply",
+          args: [
+            "monthlyAmount",
+            { op: "divide", args: ["interestRate", 1200] },
+            {
+              op: "divide",
+              args: [
+                {
+                  op: "multiply",
+                  args: [
+                    "instalmentsPaid",
+                    { op: "subtract", args: ["instalmentsPaid", 1] },
+                  ],
+                },
+                2,
+              ],
+            },
+          ],
+        },
+      },
+      {
         key: "currentValue",
         label: "Value Today",
         tone: "positive",
+        formula: { op: "sum", args: ["invested", "interestEarned"] },
+      },
+      {
+        // What it comes to if every instalment is paid.
+        key: "maturityValue",
+        label: "At Maturity",
         formula: {
-          op: "simpleInterest",
+          op: "sum",
           args: [
+            { op: "multiply", args: ["monthlyAmount", "months"] },
             {
               op: "multiply",
               args: [
                 "monthlyAmount",
-                { op: "min", args: ["_monthsHeld", "months"] },
+                { op: "divide", args: ["interestRate", 1200] },
+                {
+                  op: "divide",
+                  args: [
+                    {
+                      op: "multiply",
+                      args: ["months", { op: "subtract", args: ["months", 1] }],
+                    },
+                    2,
+                  ],
+                },
               ],
-            },
-            "interestRate",
-            {
-              op: "divide",
-              args: [{ op: "min", args: ["_monthsHeld", "months"] }, 24],
             },
           ],
         },
@@ -418,14 +472,44 @@ export const getInvestmentType = (key) =>
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// Whole calendar months between two dates - the anniversary has to have been
+// reached, so 15 Jan -> 14 Feb is 0 months and 15 Jan -> 15 Feb is 1.
+//
+// This exists because instalments land on calendar dates, not on 30.44-day
+// blocks. Deriving an instalment count from days/30.44 drifts by about four
+// days over a year, which is enough to miscount at the boundary.
+const calendarMonthsBetween = (start, asOf) => {
+  let months =
+    (asOf.getFullYear() - start.getFullYear()) * 12 +
+    (asOf.getMonth() - start.getMonth());
+
+  // The anniversary clamps to the last day of a short month, the same way a
+  // bank debits an RD opened on the 31st on 28 February. Comparing against
+  // the raw start day would skip that instalment entirely.
+  const lastDayThisMonth = new Date(
+    asOf.getFullYear(),
+    asOf.getMonth() + 1,
+    0,
+  ).getDate();
+
+  const anniversaryDay = Math.min(start.getDate(), lastDayThisMonth);
+
+  if (asOf.getDate() < anniversaryDay) months -= 1;
+
+  return Math.max(months, 0);
+};
+
 // Time held, injected so fixed-return formulas can grow without a snapshot.
 export const getHoldingContext = (purchaseDate, asOf = new Date()) => {
   const start = purchaseDate ? new Date(purchaseDate) : asOf;
   const days = Math.max((asOf - start) / MS_PER_DAY, 0);
 
   return {
+    // Fractional - right for interest, which accrues continuously.
     _yearsHeld: days / 365.25,
     _monthsHeld: days / 30.44,
+    // Whole - right for counting things that happen on a date.
+    _calendarMonthsHeld: calendarMonthsBetween(start, asOf),
   };
 };
 

@@ -8,6 +8,8 @@ import {
   FiCreditCard,
   FiRepeat,
   FiLayers,
+  FiCalendar,
+  FiUsers,
 } from "react-icons/fi";
 
 export const SIDEBAR_MENU = [
@@ -37,9 +39,14 @@ export const SIDEBAR_MENU = [
     icon: FiDollarSign,
   },
   {
-    label: "Wishlist",
-    path: "/wishlist",
+    label: "Pots",
+    path: "/pots",
     icon: FiHeart,
+  },
+  {
+    label: "Lending",
+    path: "/lending",
+    icon: FiUsers,
   },
   {
     label: "Investments",
@@ -60,5 +67,10 @@ export const SIDEBAR_MENU = [
     label: "Cards",
     path: "/cards",
     icon: FiLayers,
+  },
+  {
+    label: "Planner",
+    path: "/planner",
+    icon: FiCalendar,
   },
 ];

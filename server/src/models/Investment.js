@@ -87,6 +87,26 @@ const investmentSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // Held for the user by someone else - a parent's FD in their name, or a
+    // share of family property. Tracked because it is part of the picture,
+    // but excluded from the portfolio's own returns by default since it is
+    // not the user's capital at work.
+    onBehalfOf: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    isExternal: {
+      type: Boolean,
+      default: false,
+    },
+
+    includeInNetWorth: {
+      type: Boolean,
+      default: true,
+    },
+
     note: {
       type: String,
       default: "",
