@@ -5,10 +5,22 @@
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
+    <!-- viewport-fit=cover lets the layout paint into the notch area; the
+         safe-area insets in the layout keep content clear of it. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+
+    <!-- iOS ignores the manifest; these are what make an added-to-home-screen
+         launch open without Safari chrome. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MoneyMind" />
+    <meta name="mobile-web-app-capable" content="yes" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

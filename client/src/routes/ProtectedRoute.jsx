@@ -1,21 +1,14 @@
-import {
-  Navigate,
-} from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
-export default function ProtectedRoute({
-  children,
-}) {
-  const token =
-    localStorage.getItem(
-      "token"
-    );
+import { getToken } from "../utils/auth";
 
-  if (!token) {
-    return (
-      <Navigate
-        to="/login"
-      />
-    );
+export default function ProtectedRoute({ children }) {
+  const location = useLocation();
+
+  if (!getToken()) {
+    // "/login" resolves to the landing route. `state` carries where the user
+    // was headed so a sign-in can return them there.
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
   return children;

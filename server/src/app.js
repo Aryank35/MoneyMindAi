@@ -32,6 +32,18 @@ app.use("/api/transfers", transferRoutes);
 
 app.use("/api/investments", investmentRoutes);
 
+// Cheap liveness probe: no database work, so the client can use it both to
+// detect whether the API is reachable and to wake a sleeping instance
+// (Render's free tier spins down after inactivity) without paying for a
+// query that would block on a cold Mongo connection.
+app.get("/api/health", (req, res) => {
+  res.json({
+    success: true,
+    ready: true,
+    uptime: Math.round(process.uptime()),
+  });
+});
+
 app.get("/", (req, res) => {
   res.json({
     success: true,

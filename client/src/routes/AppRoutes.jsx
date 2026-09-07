@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "../pages/Login";
 import Signup from "../pages/Signup";
@@ -13,40 +13,55 @@ import Income from "../pages/Income";
 import Accounts from "../pages/Accounts";
 import Transfer from "../pages/Transfer";
 import Cards from "../pages/Cards";
+import { getToken } from "../utils/auth";
+
+// The installed app launches at /dashboard, but a plain visit to "/" while
+// already signed in should land there too rather than re-showing the login
+// screen. The token lives in localStorage and survives an app relaunch, so
+// this is the whole of "stay signed in".
+function LandingRoute() {
+  return getToken() ? <Navigate to="/dashboard" replace /> : <Login />;
+}
+
+// Every page behind the dashboard layout reads the signed-in user's id, so
+// each one is protected. Previously only /dashboard was, which left every
+// other page reachable without a session.
+const PROTECTED = [
+  { path: "/dashboard", element: <Dashboard /> },
+  { path: "/income", element: <Income /> },
+  { path: "/expenses", element: <Expenses /> },
+  { path: "/budget", element: <Budget /> },
+  { path: "/wishlist", element: <Wishlist /> },
+  { path: "/investments", element: <Investments /> },
+  { path: "/analytics", element: <Analytics /> },
+  { path: "/accounts", element: <Accounts /> },
+  { path: "/cards", element: <Cards /> },
+  { path: "/transfer", element: <Transfer /> },
+];
 
 export default function AppRoutes() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Login />} />
+        <Route path="/" element={<LandingRoute />} />
+
+        {/* ProtectedRoute sends unauthenticated visitors here, so the path
+            has to resolve to something. */}
+        <Route path="/login" element={<LandingRoute />} />
 
         <Route path="/signup" element={<Signup />} />
 
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
+        {PROTECTED.map((route) => (
+          <Route
+            key={route.path}
+            path={route.path}
+            element={<ProtectedRoute>{route.element}</ProtectedRoute>}
+          />
+        ))}
 
-        <Route path="/income" element={<Income />} />
-        <Route path="/expenses" element={<Expenses />} />
-
-        <Route path="/budget" element={<Budget />} />
-
-        <Route path="/wishlist" element={<Wishlist />} />
-
-        <Route path="/investments" element={<Investments />} />
-
-        <Route path="/analytics" element={<Analytics />} />
-
-        <Route path="/accounts" element={<Accounts />} />
-
-        <Route path="/cards" element={<Cards />} />
-
-        <Route path="/transfer" element={<Transfer />} />
+        {/* A deep link the app does not have - and, in the installed app, any
+            stale URL - should land somewhere useful. */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   );

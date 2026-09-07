@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { FiPlus, FiSearch, FiFilter, FiTrash2, FiTag } from "react-icons/fi";
+import {
+  FiPlus,
+  FiSearch,
+  FiFilter,
+  FiTrash2,
+  FiEdit2,
+  FiTag,
+  FiAlertTriangle,
+  FiClock,
+} from "react-icons/fi";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
 import { getAccountsByUser } from "../services/accountService";
@@ -8,10 +17,18 @@ import { getAccountsByUser } from "../services/accountService";
 import {
   getExpensesByUser,
   createExpense,
+  updateExpense,
   deleteExpense,
 } from "../services/expenseService";
 
 import { getUserId } from "../utils/auth";
+import { useConnection } from "../context/connectionContext";
+import {
+  enqueue,
+  listQueued,
+  removeQueued,
+  subscribeToOutbox,
+} from "../utils/offlineQueue";
 import { CHART_ACCENT } from "../utils/chartTheme";
 
 import { getBudgetByUser, updateBudget } from "../services/budgetService";
@@ -19,6 +36,9 @@ import { useToast } from "../components/common/Toast";
 import { PageLoader } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import ConfirmDialog from "../components/common/ConfirmDialog";
+import Modal from "../components/common/Modal";
+import Button from "../components/common/Button";
+import Input, { Select } from "../components/common/Input";
 
 // A credit card is funded by its limit, not by a positive balance, so
 // "can this account cover the spend" is a different question per type.
@@ -86,6 +106,18 @@ export default function Expenses() {
   const [selectedAccount, setSelectedAccount] = useState("all");
 
   const [accounts, setAccounts] = useState([]);
+
+  const { isReachable } = useConnection();
+
+  // Entries made while the API was unreachable. Shown alongside saved ones
+  // so the user is never left wondering whether their expense registered.
+  const [queued, setQueued] = useState(() => listQueued("expense.create"));
+
+  const [editTarget, setEditTarget] = useState(null);
+
+  const [editForm, setEditForm] = useState(null);
+
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
 
@@ -202,7 +234,7 @@ export default function Expenses() {
 
       const expenseDate = new Date(`${formData.date}T${formData.time}`);
 
-      await createExpense({
+      const payload = {
         userId: getUserId(),
 
         accountId: formData.account,
@@ -214,7 +246,39 @@ export default function Expenses() {
         note: formData.note,
 
         expenseDate,
-      });
+      };
+
+      if (!isReachable) {
+        // Held on the device and replayed by ConnectionProvider once the API
+        // answers. The balance check above already ran against the last
+        // known balances, so this is not a blind write.
+        const entry = enqueue("expense.create", payload, {
+          accountName: selectedAccountData?.name,
+        });
+
+        if (!entry) {
+          toast.error(
+            "Could not save on this device - storage is unavailable. Try again once connected.",
+          );
+
+          return;
+        }
+
+        setFormData({
+          account: formData.account,
+          category: "",
+          amount: "",
+          note: "",
+          date: new Date().toISOString().split("T")[0],
+          time: new Date().toTimeString().slice(0, 5),
+        });
+
+        toast.success("Saved on this device - it will sync automatically");
+
+        return;
+      }
+
+      await createExpense(payload);
       setFormData({
         account: formData.account,
         category: "",
@@ -231,6 +295,115 @@ export default function Expenses() {
       console.error(error);
 
       toast.error(error?.response?.data?.message || "Failed to add expense");
+    }
+  };
+
+  useEffect(
+    () =>
+      subscribeToOutbox((items) =>
+        setQueued(items.filter((item) => item.kind === "expense.create")),
+      ),
+    [],
+  );
+
+  // The outbox drained, so what was pending is now real - refetch rather
+  // than leaving a stale list beside an empty queue.
+  useEffect(() => {
+    const onFlushed = () => {
+      fetchExpenses();
+      fetchAccounts();
+    };
+
+    window.addEventListener("moneymind:outbox-flushed", onFlushed);
+
+    return () =>
+      window.removeEventListener("moneymind:outbox-flushed", onFlushed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const openEditExpense = (expense) => {
+    const when = expense.expenseDate ? new Date(expense.expenseDate) : new Date();
+
+    setEditTarget(expense);
+    setEditForm({
+      account: expense.accountId || "",
+      category: expense.category || "",
+      amount: String(expense.amount ?? ""),
+      note: expense.note || "",
+      date: `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, "0")}-${String(when.getDate()).padStart(2, "0")}`,
+      time: when.toTimeString().slice(0, 5),
+    });
+  };
+
+  const closeEditExpense = () => {
+    setEditTarget(null);
+    setEditForm(null);
+  };
+
+  const handleUpdateExpense = async () => {
+    if (!editForm || !editTarget) return;
+
+    const amount = Number(editForm.amount);
+
+    if (!editForm.account) {
+      toast.error("Please select an account");
+      return;
+    }
+
+    if (!editForm.category) {
+      toast.error("Please select a category");
+      return;
+    }
+
+    if (!(amount > 0)) {
+      toast.error("Amount must be greater than 0");
+      return;
+    }
+
+    const target = accounts.find((item) => item._id === editForm.account);
+    const capacity = getSpendingPower(target);
+
+    // Editing refunds the original charge before applying the new one, so
+    // the money already committed to this expense is spendable again -
+    // but only when it is going back to the same account.
+    const sameAccount = String(editForm.account) === String(editTarget.accountId);
+
+    const effectiveCapacity =
+      capacity === null
+        ? null
+        : capacity + (sameAccount ? Number(editTarget.amount || 0) : 0);
+
+    if (effectiveCapacity !== null && amount > effectiveCapacity) {
+      toast.error(
+        isCard(target)
+          ? `Exceeds available credit on ${target.name} (${money(effectiveCapacity)} available for this expense)`
+          : `Insufficient balance in ${target?.name || "that account"} (${money(effectiveCapacity)} available for this expense)`,
+      );
+      return;
+    }
+
+    try {
+      setSavingEdit(true);
+
+      await updateExpense(editTarget._id, {
+        accountId: editForm.account,
+        category: editForm.category,
+        amount,
+        note: editForm.note,
+        expenseDate: new Date(`${editForm.date}T${editForm.time}`),
+      });
+
+      closeEditExpense();
+
+      await Promise.all([fetchExpenses(), fetchAccounts()]);
+
+      toast.success("Expense updated");
+    } catch (error) {
+      console.error(error);
+
+      toast.error(error?.response?.data?.message || "Failed to update expense");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -970,6 +1143,77 @@ export default function Expenses() {
             </thead>
 
             <tbody>
+              {/* Pending rows are not filterable or editable - they do not
+                  exist server-side yet. They can be discarded. */}
+              {queued.map((entry) => (
+                <tr
+                  key={entry.id}
+                  className={`border-b border-dashed ${
+                    entry.blocked
+                      ? "border-red-400/25 bg-red-500/5"
+                      : "border-amber-400/20 bg-amber-500/5"
+                  }`}
+                >
+                  <td className="p-5">
+                    {entry.meta?.accountName || "Pending account"}
+                  </td>
+                  <td className="p-5">
+                    {entry.payload.expenseDate
+                      ? new Date(entry.payload.expenseDate).toLocaleString()
+                      : "-"}
+                  </td>
+                  <td className="p-5">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs ${
+                        entry.blocked
+                          ? "bg-red-500/15 text-red-200"
+                          : "bg-amber-500/15 text-amber-200"
+                      }`}
+                    >
+                      {entry.payload.category}
+                    </span>
+                  </td>
+                  <td className="p-5 text-slate-400">
+                    {entry.blocked ? (
+                      <span className="flex items-start gap-2 text-xs text-red-300">
+                        <FiAlertTriangle className="mt-0.5 shrink-0" />
+                        <span>
+                          The server refused this — it will not retry on its
+                          own.
+                          <span className="mt-0.5 block text-red-300/80">
+                            {entry.lastError}
+                          </span>
+                          Fix it by re-entering above, then discard this.
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2 text-xs text-amber-200">
+                        <FiClock />
+                        Waiting to sync
+                        {entry.lastError && ` — retrying (${entry.lastError})`}
+                      </span>
+                    )}
+                    {entry.payload.note && (
+                      <span className="mt-1 block">{entry.payload.note}</span>
+                    )}
+                  </td>
+                  <td className="p-5 text-right font-medium text-amber-200">
+                    {money(entry.payload.amount)}
+                  </td>
+                  <td className="p-5">
+                    <div className="flex items-center justify-center">
+                      <button
+                        onClick={() => removeQueued(entry.id)}
+                        aria-label="Discard pending expense"
+                        className="text-slate-400 transition-colors hover:text-red-300"
+                      >
+                        <FiTrash2 size={17} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
               {filteredExpenses?.length > 0 ? (
                 filteredExpenses.map((expense, index) => (
                   <motion.tr
@@ -1022,14 +1266,24 @@ export default function Expenses() {
                       ₹{Number(expense.amount).toLocaleString()}
                     </td>
 
-                    <td className="p-5 text-center">
-                      <button
-                        onClick={() => requestDeleteExpense(expense)}
-                        aria-label="Delete expense"
-                        className="text-red-400 hover:text-red-300"
-                      >
-                        <FiTrash2 size={18} />
-                      </button>
+                    <td className="p-5">
+                      <div className="flex items-center justify-center gap-4">
+                        <button
+                          onClick={() => openEditExpense(expense)}
+                          aria-label={`Edit ${expense.category} expense`}
+                          className="text-slate-400 transition-colors hover:text-white"
+                        >
+                          <FiEdit2 size={17} />
+                        </button>
+
+                        <button
+                          onClick={() => requestDeleteExpense(expense)}
+                          aria-label={`Delete ${expense.category} expense`}
+                          className="text-red-400 transition-colors hover:text-red-300"
+                        >
+                          <FiTrash2 size={18} />
+                        </button>
+                      </div>
                     </td>
                   </motion.tr>
                 ))
@@ -1048,6 +1302,179 @@ export default function Expenses() {
           </table>
         </div>
       </div>
+
+      <Modal
+        isOpen={!!editTarget}
+        onClose={closeEditExpense}
+        title="Edit Expense"
+        maxWidth="max-w-2xl"
+      >
+        {editForm && (
+          <>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Select
+                label="Account"
+                value={editForm.account}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, account: e.target.value })
+                }
+              >
+                <option value="">Select account</option>
+                {accounts.map((account) => (
+                  <option key={account._id} value={account._id}>
+                    {account.name} —{" "}
+                    {isCard(account)
+                      ? `${money(getOutstanding(account))} owed`
+                      : money(account.balance)}
+                  </option>
+                ))}
+              </Select>
+
+              <Select
+                label="Category"
+                value={editForm.category}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, category: e.target.value })
+                }
+              >
+                <option value="">Select category</option>
+                {budgetCategories.map((category) => (
+                  <option key={category.name} value={category.name}>
+                    {category.name}
+                  </option>
+                ))}
+                {/* A category can be renamed or dropped from the budget after
+                    the fact - keep the original selectable so editing an
+                    amount never silently reassigns it. */}
+                {editForm.category &&
+                  !budgetCategories.some(
+                    (category) => category.name === editForm.category,
+                  ) && (
+                    <option value={editForm.category}>
+                      {editForm.category} (not in budget)
+                    </option>
+                  )}
+              </Select>
+
+              <Input
+                label="Amount"
+                type="number"
+                value={editForm.amount}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, amount: e.target.value })
+                }
+              />
+
+              <Input
+                label="Note"
+                value={editForm.note}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, note: e.target.value })
+                }
+              />
+
+              <Input
+                label="Date"
+                type="date"
+                value={editForm.date}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, date: e.target.value })
+                }
+              />
+
+              <Input
+                label="Time"
+                type="time"
+                value={editForm.time}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, time: e.target.value })
+                }
+              />
+            </div>
+
+            {/* What this edit does to balances, before it happens. */}
+            {(() => {
+              const nextAccount = accounts.find(
+                (item) => item._id === editForm.account,
+              );
+              const oldAccount = accounts.find(
+                (item) => item._id === editTarget.accountId,
+              );
+              const moved =
+                String(editForm.account) !== String(editTarget.accountId);
+              const nextAmount = Number(editForm.amount || 0);
+              const oldAmount = Number(editTarget.amount || 0);
+
+              if (!nextAccount) return null;
+
+              return (
+                <div className="mt-5 rounded-xl bg-slate-800/80 p-4 text-sm">
+                  <p className="text-slate-400">After saving</p>
+
+                  {moved ? (
+                    <div className="mt-2 space-y-1">
+                      <p>
+                        {oldAccount?.name || "Previous account"} is refunded{" "}
+                        <span className="font-semibold text-emerald-300">
+                          {money(oldAmount)}
+                        </span>
+                      </p>
+                      <p>
+                        {nextAccount.name} is charged{" "}
+                        <span className="font-semibold text-red-300">
+                          {money(nextAmount)}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-2">
+                      {nextAccount.name}{" "}
+                      {nextAmount === oldAmount ? (
+                        "is unchanged"
+                      ) : (
+                        <>
+                          moves by{" "}
+                          <span
+                            className={`font-semibold ${
+                              nextAmount < oldAmount
+                                ? "text-emerald-300"
+                                : "text-red-300"
+                            }`}
+                          >
+                            {nextAmount < oldAmount ? "+" : "−"}
+                            {money(Math.abs(nextAmount - oldAmount))}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {editTarget.category !== editForm.category && (
+              <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-200">
+                <FiAlertTriangle className="mt-0.5 shrink-0" />
+                Moving this from {editTarget.category} to {editForm.category}{" "}
+                shifts it between budget categories too.
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                variant="secondary"
+                onClick={closeEditExpense}
+                disabled={savingEdit}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleUpdateExpense} loading={savingEdit}>
+                Save Changes
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
 
       <ConfirmDialog
         isOpen={!!deleteTarget}

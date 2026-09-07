@@ -1,4 +1,5 @@
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AccountCard from "../components/common/AccountCard";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -454,41 +455,8 @@ export default function Dashboard() {
             className="grid md:grid-cols-2 xl:grid-cols-4 gap-5"
           >
             {accounts.map((account) => (
-              <motion.div
-                key={account._id}
-                variants={itemVariants}
-                className="
-        relative
-        overflow-hidden
-        rounded-3xl
-        bg-gradient-to-br
-        from-indigo-600
-        to-purple-700
-        p-6
-        shadow-xl
-        hover:scale-105
-        transition-all
-      "
-              >
-                <div className="absolute top-4 right-4 opacity-20 text-6xl">
-                  💳
-                </div>
-
-                <div className="text-4xl">{account.icon || "🏦"}</div>
-
-                <h3 className="mt-6 text-xl font-bold">{account.name}</h3>
-
-                <p className="text-indigo-100">{account.type}</p>
-
-                <div className="mt-8">
-                  <p className="text-indigo-100 text-sm">Available Balance</p>
-
-                  <h2 className="text-3xl font-bold">
-                    ₹{Number(account.balance || 0).toLocaleString()}
-                  </h2>
-                </div>
-
-                <p className="mt-6 text-xs opacity-70">**** **** **** 2458</p>
+              <motion.div key={account._id} variants={itemVariants}>
+                <AccountCard account={account} />
               </motion.div>
             ))}
           </motion.div>

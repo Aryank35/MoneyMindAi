@@ -19,6 +19,7 @@ import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
 import StatementModal from "../components/common/StatementModal";
+import AccountCard from "../components/common/AccountCard";
 
 // The two exclusive account roles, described once and reused by the cards
 // and both modals. Adding another exclusive role means one entry here.
@@ -40,28 +41,6 @@ const ROLE_DEFS = [
 // A credit card's balance is negative while money is owed. Showing a bare
 // "-12,000" reads like a bug, so cards are described in their own terms.
 const isCard = (account) => account.type === "Credit Card";
-
-const describeBalance = (account) => {
-  const value = Number(account.balance || 0);
-
-  if (!isCard(account)) return money(value);
-
-  if (value < 0) return money(-value);
-
-  return money(value);
-};
-
-const balanceCaption = (account) => {
-  const value = Number(account.balance || 0);
-
-  if (!isCard(account)) return null;
-
-  if (value < 0) return "outstanding";
-
-  if (value > 0) return "in credit";
-
-  return "nothing owed";
-};
 
 const money = (value) =>
   new Intl.NumberFormat("en-IN", {
@@ -104,19 +83,6 @@ export default function Accounts() {
     isSalaryAccount: false,
     isEpfAccount: false,
   });
-
-  // One card treatment for every account type. The type reads through the
-  // icon and a single accent hairline rather than a different gradient each -
-  // seven competing gradients was the loudest thing on the page.
-  const accountThemes = {
-    Bank: { accent: "bg-indigo-400/70", tint: "text-indigo-200", icon: "\ud83c\udfe6" },
-    Cash: { accent: "bg-emerald-400/70", tint: "text-emerald-200", icon: "\ud83d\udcb5" },
-    UPI: { accent: "bg-cyan-400/70", tint: "text-cyan-200", icon: "\ud83d\udcf1" },
-    Wallet: { accent: "bg-cyan-400/70", tint: "text-cyan-200", icon: "\ud83d\udc5b" },
-    "Credit Card": { accent: "bg-red-400/70", tint: "text-red-200", icon: "\ud83d\udcb3" },
-    Investment: { accent: "bg-indigo-400/70", tint: "text-indigo-200", icon: "\ud83d\udcc8" },
-    EPF: { accent: "bg-amber-400/70", tint: "text-amber-200", icon: "\ud83d\udee1\ufe0f" },
-  };
 
   const loadAccounts = async () => {
     try {
@@ -367,8 +333,6 @@ export default function Accounts() {
             }}
           >
             {accounts.map((account) => {
-              const theme = accountThemes[account.type] || accountThemes.Bank;
-
               // Cards are measured against their credit limit; everything
               // else against total assets. Both are clamped so a negative
               // balance can never produce a negative bar width.
@@ -398,63 +362,14 @@ export default function Accounts() {
                     hidden: { opacity: 0, y: 12 },
                     visible: { opacity: 1, y: 0 },
                   }}
-                  className="
-                    group relative overflow-hidden rounded-2xl border
-                    border-white/10 bg-slate-900 p-6 shadow-xl shadow-black/40
-                    transition-all duration-200
-                    hover:-translate-y-0.5 hover:border-white/20
-                  "
                 >
-                  <span
-                    className={`absolute inset-x-0 top-0 h-px ${theme.accent}`}
-                    aria-hidden="true"
-                  />
-
-                  <div className="flex justify-between">
-                    <div className="text-5xl">{theme.icon}</div>
-
-                    <div className="text-xs tracking-widest text-slate-500">
-                      **** {String(account._id).slice(-4)}
-                    </div>
-                  </div>
-
-                  <h2 className="mt-8 text-xl font-bold">{account.name}</h2>
-
-                  <p className={`text-sm ${theme.tint}`}>{account.type}</p>
-
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {account.isSalaryAccount && (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-xs font-semibold text-indigo-200">
-                        Salary Account
-                      </span>
-                    )}
-                    {account.isEpfAccount && (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">
-                        EPF Account
-                      </span>
-                    )}
-                  </div>
-
-                  <h3
-                    className={`mt-4 text-4xl font-bold ${
-                      isCard(account) && Number(account.balance) < 0
-                        ? "text-red-300"
-                        : ""
-                    }`}
-                  >
-                    {describeBalance(account)}
-                  </h3>
-
-                  {balanceCaption(account) && (
-                    <p className="text-xs text-slate-500">
-                      {balanceCaption(account)}
-                    </p>
-                  )}
-
+                  <AccountCard account={account}>
                   <div className="mt-4">
                     <div className="h-1 w-full rounded-full bg-white/10">
                       <div
-                        className={`h-1 rounded-full ${theme.accent}`}
+                        className={`h-1 rounded-full ${
+                          isCard(account) ? "bg-red-400" : "bg-white/40"
+                        }`}
                         style={{
                           width: `${allocation}%`,
                         }}
@@ -551,6 +466,7 @@ export default function Accounts() {
                       Delete
                     </button>
                   </div>
+                  </AccountCard>
                 </motion.div>
               );
             })}

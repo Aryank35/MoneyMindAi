@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
+import MobileNav from "./MobileNav";
+import ConnectionBanner from "../common/ConnectionBanner";
 import { getDashboardData } from "../../services/dashboardService";
 import { getUserId } from "../../utils/auth";
 import { computeFinancialHealth } from "../../utils/financialHealth";
@@ -115,14 +117,19 @@ export default function DashboardLayout({ children }) {
           text-white
           px-4
           lg:px-8
-          pb-8
-          lg:pb-10
           pt-[calc(var(--nav-h)+1rem)]
           lg:pt-[calc(var(--nav-h)+2rem)]
+          pb-[calc(5.5rem+env(safe-area-inset-bottom))]
+          lg:pb-10
         "
       >
+        <ConnectionBanner />
+
         {children}
       </main>
+
+      {/* Bottom tab bar - phones only; the sidebar covers lg and up. */}
+      <MobileNav />
     </div>
   );
 }

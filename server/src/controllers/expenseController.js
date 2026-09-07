@@ -16,7 +16,19 @@ const validateExpense = ({ category, amount }) => {
 
 export const createExpense = async (req, res) => {
   try {
-    const expense = await Expense.create(req.body);
+    const validationError = validateExpense(req.body);
+
+    if (validationError) {
+      return res.status(400).json({
+        success: false,
+        message: validationError,
+      });
+    }
+
+    const expense = await Expense.create({
+      ...req.body,
+      amount: Number(req.body.amount),
+    });
 
     if (req.body.accountId) {
       await deductBalance(req.body.accountId, req.body.amount);
@@ -81,25 +93,24 @@ export const updateExpense = async (req, res) => {
       });
     }
 
-    if (existingExpense.accountId) {
-      const account = await Account.findById(existingExpense.accountId);
+    // Reverse the old charge and apply the new one as two independent
+    // movements. Adjusting the old account in place was wrong the moment the
+    // account changed: it refunded and re-charged the same account while the
+    // newly chosen one was never debited at all.
+    const nextAccountId = req.body.accountId ?? existingExpense.accountId;
 
-      if (account) {
-        account.balance += Number(existingExpense.amount);
+    await addBalance(existingExpense.accountId, existingExpense.amount);
 
-        account.balance -= Number(amount);
-
-        await account.save();
-      }
-    }
+    await deductBalance(nextAccountId, amount);
 
     const updatedExpense = await Expense.findByIdAndUpdate(
       req.params.id,
       {
         ...req.body,
+        accountId: nextAccountId,
         amount: Number(amount),
       },
-      { new: true },
+      { returnDocument: "after" },
     );
 
     res.json({
