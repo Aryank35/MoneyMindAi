@@ -90,6 +90,14 @@ const obligationSchema = new mongoose.Schema(
       },
     ],
 
+    // Whether recording this obligation actually moved the account balance.
+    // Logging a historic loan can skip that, and the bank statement must not
+    // then show a movement that never happened.
+    balanceApplied: {
+      type: Boolean,
+      default: false,
+    },
+
     // Set when the balance reaches zero, or when the user writes it off.
     closedOn: {
       type: Date,

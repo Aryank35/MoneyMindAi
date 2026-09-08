@@ -14,6 +14,7 @@ import {
   FiRepeat,
   FiTarget,
   FiTrendingUp,
+  FiPieChart,
   FiUsers,
   FiX,
 } from "react-icons/fi";
@@ -35,6 +36,7 @@ const MORE = [
   { label: "Investments", path: "/investments", icon: FiTrendingUp },
   { label: "Pots", path: "/pots", icon: FiHeart },
   { label: "Lending", path: "/lending", icon: FiUsers },
+  { label: "Splits", path: "/splits", icon: FiPieChart },
   { label: "Analytics", path: "/analytics", icon: FiBarChart2 },
 ];
 

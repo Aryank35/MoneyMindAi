@@ -10,6 +10,7 @@ import {
   FiLayers,
   FiCalendar,
   FiUsers,
+  FiPieChart,
 } from "react-icons/fi";
 
 export const SIDEBAR_MENU = [
@@ -47,6 +48,11 @@ export const SIDEBAR_MENU = [
     label: "Lending",
     path: "/lending",
     icon: FiUsers,
+  },
+  {
+    label: "Splits",
+    path: "/splits",
+    icon: FiPieChart,
   },
   {
     label: "Investments",

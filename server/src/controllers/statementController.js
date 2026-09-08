@@ -2,6 +2,9 @@ import Account from "../models/Account.js";
 import Income from "../models/Income.js";
 import Expense from "../models/Expense.js";
 import Transfer from "../models/Transfer.js";
+import Wishlist from "../models/Wishlist.js";
+import Obligation from "../models/Obligation.js";
+import Split from "../models/Split.js";
 import {
   getCardCycle,
   getDueStatus,
@@ -25,13 +28,25 @@ import {
 const collectEntries = async (account) => {
   const id = account._id;
 
-  const [incomes, expenses, transfers] = await Promise.all([
+  // Every model that can move this account's balance has to be here, or the
+  // statement silently loses movements and stops tying out. Pots and
+  // lending were missing, which understated the opening balance by whatever
+  // had been set aside or lent.
+  const [incomes, expenses, transfers, pots, obligations, splits] =
+    await Promise.all([
     Income.find({
       $or: [{ accountId: id }, { epfAccountId: id }],
     }),
     Expense.find({ accountId: String(id) }),
     Transfer.find({
       $or: [{ fromAccountId: id }, { toAccountId: id }],
+    }),
+    Wishlist.find({ "savingsHistory.accountId": id }),
+    Obligation.find({
+      $or: [{ accountId: id }, { "settlements.accountId": id }],
+    }),
+    Split.find({
+      $or: [{ accountId: id }, { "settlements.accountId": id }],
     }),
   ]);
 
@@ -91,6 +106,110 @@ const collectEntries = async (account) => {
       detail: "",
       note: transfer.note || "",
     });
+  }
+
+  for (const pot of pots) {
+    for (const [index, move] of (pot.savingsHistory || []).entries()) {
+      if (String(move.accountId || "") !== String(id)) continue;
+
+      // Funding a pot leaves the account; taking it back out returns to it.
+      const isOut = move.direction === "out";
+
+      entries.push({
+        id: `${pot._id}-pot-${index}`,
+        kind: isOut ? "pot-withdrawal" : "pot-funding",
+        date: move.date,
+        amount: isOut
+          ? Number(move.amount || 0)
+          : -Number(move.amount || 0),
+        label: pot.itemName,
+        detail: isOut ? "Returned from pot" : "Set aside",
+        note: move.note || "",
+      });
+    }
+  }
+
+  for (const obligation of obligations) {
+    // The principal only moved if it was actually applied - a historic loan
+    // logged after the fact never touched the balance.
+    if (
+      obligation.balanceApplied &&
+      String(obligation.accountId || "") === String(id)
+    ) {
+      const lent = obligation.direction === "lent";
+
+      entries.push({
+        id: `${obligation._id}-principal`,
+        kind: lent ? "lent" : "borrowed",
+        date: obligation.agreedOn,
+        amount: lent
+          ? -Number(obligation.principal || 0)
+          : Number(obligation.principal || 0),
+        label: obligation.counterparty,
+        detail: lent ? "Lent out" : "Borrowed",
+        note: obligation.note || "",
+      });
+    }
+
+    for (const [index, settlement] of (obligation.settlements || []).entries()) {
+      if (String(settlement.accountId || "") !== String(id)) continue;
+
+      // Repayment of something lent comes back in; repaying a debt goes out.
+      const incoming = obligation.direction === "lent";
+
+      entries.push({
+        id: `${obligation._id}-settle-${index}`,
+        kind: incoming ? "repayment-in" : "repayment-out",
+        date: settlement.date,
+        amount: incoming
+          ? Number(settlement.amount || 0)
+          : -Number(settlement.amount || 0),
+        label: obligation.counterparty,
+        detail: incoming ? "Repaid to you" : "You repaid",
+        note: settlement.note || "",
+      });
+    }
+  }
+
+  for (const split of splits) {
+    // The expense for the user's own share is already covered by the Expense
+    // loop above. This is the money advanced on everyone else's behalf -
+    // real cash out, but not spending.
+    if (
+      split.paidByMe &&
+      String(split.accountId || "") === String(id) &&
+      Number(split.advanceAmount || 0) > 0
+    ) {
+      entries.push({
+        id: `${split._id}-advance`,
+        kind: "split-advance",
+        date: split.date,
+        amount: -Number(split.advanceAmount),
+        label: split.description,
+        detail: "Paid on others' behalf",
+        note: split.note || "",
+      });
+    }
+
+    // Only inbound settlements are emitted here. When someone else paid the
+    // bill, settling my share writes a real Expense, which the Expense loop
+    // above already picks up - emitting it again would double-count a single
+    // debit.
+    if (!split.paidByMe) continue;
+
+    for (const [index, settlement] of (split.settlements || []).entries()) {
+      if (String(settlement.accountId || "") !== String(id)) continue;
+
+      entries.push({
+        id: `${split._id}-settle-${index}`,
+        kind: "repayment-in",
+        date: settlement.date,
+        amount: Number(settlement.amount || 0),
+        label: `${split.description} · ${settlement.participantName}`,
+        detail: "Split repaid to you",
+        note: settlement.note || "",
+      });
+    }
   }
 
   entries.sort((a, b) => new Date(a.date) - new Date(b.date));

@@ -38,6 +38,39 @@ const KIND_META = {
     icon: FiArrowUpRight,
     tone: "text-red-300",
   },
+  // Money that left the account without being spent - set aside or lent.
+  "pot-funding": {
+    label: "To pot",
+    icon: FiArrowUpRight,
+    tone: "text-indigo-300",
+  },
+  "pot-withdrawal": {
+    label: "From pot",
+    icon: FiArrowDownLeft,
+    tone: "text-indigo-300",
+  },
+  lent: { label: "Lent", icon: FiArrowUpRight, tone: "text-amber-300" },
+  borrowed: {
+    label: "Borrowed",
+    icon: FiArrowDownLeft,
+    tone: "text-amber-300",
+  },
+  "repayment-in": {
+    label: "Repaid to you",
+    icon: FiArrowDownLeft,
+    tone: "text-emerald-300",
+  },
+  "repayment-out": {
+    label: "You repaid",
+    icon: FiArrowUpRight,
+    tone: "text-red-300",
+  },
+  split: { label: "Split", icon: FiArrowUpRight, tone: "text-red-300" },
+  "split-advance": {
+    label: "Advanced",
+    icon: FiArrowUpRight,
+    tone: "text-amber-300",
+  },
 };
 
 const RANGES = [

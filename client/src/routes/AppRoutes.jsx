@@ -7,6 +7,7 @@ import Expenses from "../pages/Expenses";
 import Budget from "../pages/Budget";
 import Pots from "../pages/Pots";
 import Lending from "../pages/Lending";
+import Splits from "../pages/Splits";
 import Investments from "../pages/Investments";
 import ProtectedRoute from "./ProtectedRoute";
 import Analytics from "../pages/Analytics";
@@ -35,6 +36,7 @@ const PROTECTED = [
   { path: "/budget", element: <Budget /> },
   { path: "/pots", element: <Pots /> },
   { path: "/lending", element: <Lending /> },
+  { path: "/splits", element: <Splits /> },
   { path: "/investments", element: <Investments /> },
   { path: "/analytics", element: <Analytics /> },
   { path: "/accounts", element: <Accounts /> },

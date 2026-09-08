@@ -112,6 +112,7 @@ export const createObligation = async (req, res) => {
     const obligation = await Obligation.create({
       ...payload,
       userId: req.body.userId,
+      balanceApplied: Boolean(moveMoney),
     });
 
     res.status(201).json({
