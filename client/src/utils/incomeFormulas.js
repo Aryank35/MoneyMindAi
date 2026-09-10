@@ -48,7 +48,26 @@ export const compactAmount = (value) => {
 
   if (amount < 100000) return scale(1000, "k");
 
-  return scale(100000, "L");
+  // Indian convention switches to crore at a hundred lakh, so "1.2Cr" rather
+  // than the "123L" a lakh-only scale would give.
+  if (amount < 10000000) return scale(100000, "L");
+
+  return scale(10000000, "Cr");
+};
+
+// Where a figure sits in a three-across tile on a 320px phone, the grouped
+// form fits up to about ten lakh and is ellipsised past it - measured in a
+// 71px box, where "₹9,99,999" renders at 65px and "₹12,34,567" at 74px.
+// So the full amount is kept while it survives, and only beyond that does the
+// compact form take over, a clipped "₹12,34,5..." being the worse of the two.
+const GROUPED_FITS_BELOW = 1000000;
+
+export const tileAmount = (value) => {
+  const amount = Number(value || 0);
+
+  return Math.abs(amount) < GROUPED_FITS_BELOW
+    ? `₹${amount.toLocaleString("en-IN")}`
+    : `₹${compactAmount(amount)}`;
 };
 
 export const monthNames = [

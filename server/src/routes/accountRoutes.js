@@ -6,6 +6,7 @@ import {
   updateAccount,
   deleteAccount,
   getAccountDeleteImpact,
+  reorderAccounts,
 } from "../controllers/accountController.js";
 import {
   getAccountStatement,
@@ -28,6 +29,9 @@ router.get("/transactions/:userId", getUserTransactions);
 router.get("/:id/statement", getAccountStatement);
 
 router.get("/:id/delete-impact", getAccountDeleteImpact);
+
+// Declared before "/:id" so "reorder" is not read as an account id.
+router.put("/reorder", reorderAccounts);
 
 router.put("/:id", updateAccount);
 

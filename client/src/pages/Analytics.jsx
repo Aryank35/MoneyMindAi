@@ -29,7 +29,7 @@ import Modal from "../components/common/Modal";
 import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import CategoryProgressBar from "../components/common/CategoryProgressBar";
-import { compactAmount } from "../utils/incomeFormulas";
+import { compactAmount, tileAmount } from "../utils/incomeFormulas";
 
 // "YYYY-MM-DD" in the viewer's own timezone. Every calendar key in this
 // file goes through here so cell totals and day listings agree.
@@ -408,25 +408,53 @@ export default function Analytics() {
           ₹{remaining.toLocaleString()}
         </h2>
 
-        <div className="grid grid-cols-3 gap-4 mt-6">
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-            <p className="text-slate-400 text-sm">Income</p>
-            <h4 className="text-xl font-bold text-green-400 mt-1">
-              ₹{totalIncome.toLocaleString()}
-            </h4>
-          </div>
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 mt-6">
+          {[
+            {
+              label: "Income",
+              value: totalIncome,
+              tone: "text-green-400",
+            },
+            {
+              label: "Expense",
+              value: totalExpense,
+              tone: "text-red-400",
+            },
+            {
+              label: "Transactions",
+              value: transactionCount,
+              tone: "",
+              plain: true,
+            },
+          ].map((tile) => (
+            <div
+              key={tile.label}
+              className="min-w-0 bg-white/5 border border-white/10 rounded-xl p-2 sm:p-4"
+            >
+              <p className="text-slate-400 text-xs sm:text-sm truncate">
+                {tile.label}
+              </p>
 
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-            <p className="text-slate-400 text-sm">Expense</p>
-            <h4 className="text-xl font-bold text-red-400 mt-1">
-              ₹{totalExpense.toLocaleString()}
-            </h4>
-          </div>
+              <h4
+                className={`text-base sm:text-xl font-bold mt-1 tabular-nums truncate ${tile.tone}`}
+                title={tile.plain ? undefined : `₹${tile.value.toLocaleString("en-IN")}`}
+              >
+                {tile.plain ? (
+                  tile.value
+                ) : (
+                  <>
+                    {/* Full figure while it fits the narrow tile, compact
+                        past the point it would be ellipsised. */}
+                    <span className="sm:hidden">{tileAmount(tile.value)}</span>
 
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-            <p className="text-slate-400 text-sm">Transactions</p>
-            <h4 className="text-xl font-bold mt-1">{transactionCount}</h4>
-          </div>
+                    <span className="hidden sm:inline">
+                      ₹{tile.value.toLocaleString("en-IN")}
+                    </span>
+                  </>
+                )}
+              </h4>
+            </div>
+          ))}
         </div>
       </motion.div>
 

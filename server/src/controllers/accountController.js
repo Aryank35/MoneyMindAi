@@ -77,10 +77,15 @@ export const createAccount = async (req, res) => {
     const isEpfAccount =
       req.body.isEpfAccount === true || (!hasEpfAccount && type === "EPF");
 
+    // Appended rather than inserted, so adding an account never reshuffles
+    // the order the user set.
+    const last = await Account.findOne({ userId }).sort({ displayOrder: -1 });
+
     const account = await Account.create({
       ...req.body,
       isSalaryAccount,
       isEpfAccount,
+      displayOrder: (last?.displayOrder ?? -1) + 1,
     });
 
     res.status(201).json({
@@ -97,11 +102,14 @@ export const createAccount = async (req, res) => {
 
 export const getAccountsByUser = async (req, res) => {
   try {
+    // The user's own order comes first. Roles no longer force the salary or
+    // EPF account to the top - they are still badged, but where they sit is
+    // now the user's call. createdAt breaks ties so a newly added account
+    // lands at the end rather than jumping around.
     const accounts = await Account.find({
       userId: req.params.userId,
     }).sort({
-      isSalaryAccount: -1,
-      isEpfAccount: -1,
+      displayOrder: 1,
       createdAt: 1,
     });
 
@@ -239,5 +247,65 @@ export const getAccountDeleteImpact = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+// Applies a user-chosen order. Takes the ids in their new sequence and
+// writes each one's position, in a single round trip.
+export const reorderAccounts = async (req, res) => {
+  try {
+    const { userId, order } = req.body;
+
+    if (!Array.isArray(order) || order.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Send the account ids in their new order" });
+    }
+
+    const owned = await Account.find({ userId })
+      .select("_id")
+      .sort({ displayOrder: 1, createdAt: 1 });
+
+    const ownedIds = new Set(owned.map((account) => String(account._id)));
+
+    // Reordering must never be a way to touch someone else's account.
+    const foreign = order.filter((id) => !ownedIds.has(String(id)));
+
+    if (foreign.length > 0) {
+      return res
+        .status(403)
+        .json({ success: false, message: "That account does not belong to this user" });
+    }
+
+    // The client sends the whole list, but a partial one has to behave
+    // sensibly too: anything not named keeps its relative order and follows
+    // the named ones. Without this, unnamed accounts kept their old
+    // positions and interleaved with the new ones.
+    const listed = order.map((id) => String(id));
+
+    const sequence = [
+      ...listed,
+      ...owned
+        .map((account) => String(account._id))
+        .filter((id) => !listed.includes(id)),
+    ];
+
+    await Account.bulkWrite(
+      sequence.map((id, index) => ({
+        updateOne: {
+          filter: { _id: id, userId },
+          update: { $set: { displayOrder: index } },
+        },
+      })),
+    );
+
+    const accounts = await Account.find({ userId }).sort({
+      displayOrder: 1,
+      createdAt: 1,
+    });
+
+    res.json({ success: true, data: accounts });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

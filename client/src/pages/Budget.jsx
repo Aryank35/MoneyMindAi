@@ -7,6 +7,8 @@ import {
   FiArrowRight,
   FiTrash2,
   FiX,
+  FiChevronUp,
+  FiChevronDown,
 } from "react-icons/fi";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
@@ -33,6 +35,7 @@ import EmptyState from "../components/common/EmptyState";
 import { useToast } from "../components/common/Toast";
 import CategoryProgressBar from "../components/common/CategoryProgressBar";
 import ConfirmDialog from "../components/common/ConfirmDialog";
+import { moveItem } from "../utils/reorder";
 import { money } from "../utils/incomeFormulas";
 
 // =========================
@@ -100,6 +103,15 @@ export default function Budget() {
   // =========================
   // CATEGORY HANDLERS
   // =========================
+
+  // Category order is simply the array order - it is what the budget stores
+  // and what every category picker reads - so moving one is a local swap
+  // that saves with the rest of the form.
+  const handleMoveCategory = (index, direction) =>
+    setBudgetForm((prev) => ({
+      ...prev,
+      categories: moveItem(prev.categories, index, index + direction),
+    }));
 
   const handleAddCategory = () => {
     setBudgetForm((prev) => ({
@@ -1001,15 +1013,36 @@ export default function Budget() {
                   <option value="Bill">Bill</option>
                 </Select>
 
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  icon={FiX}
-                  aria-label="Remove category"
-                  onClick={() => handleRemoveCategory(index)}
-                  className="shrink-0 self-start"
-                />
+                <div className="flex shrink-0 gap-1 self-start">
+                  <button
+                    type="button"
+                    onClick={() => handleMoveCategory(index, -1)}
+                    disabled={index === 0}
+                    aria-label="Move category up"
+                    className="rounded-lg border border-white/10 p-2 text-slate-300 transition active:scale-95 disabled:opacity-30"
+                  >
+                    <FiChevronUp />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleMoveCategory(index, 1)}
+                    disabled={index === budgetForm.categories.length - 1}
+                    aria-label="Move category down"
+                    className="rounded-lg border border-white/10 p-2 text-slate-300 transition active:scale-95 disabled:opacity-30"
+                  >
+                    <FiChevronDown />
+                  </button>
+
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    icon={FiX}
+                    aria-label="Remove category"
+                    onClick={() => handleRemoveCategory(index)}
+                  />
+                </div>
               </div>
             </div>
           ))}

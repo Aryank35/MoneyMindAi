@@ -109,7 +109,11 @@ export default function Navbar({ onMenuClick, health }) {
             MoneyMind AI
           </h1>
 
-          <p className="text-xs text-slate-400">Smart Finance Companion</p>
+          {/* Wraps to two lines inside the compressed mobile navbar, and the
+              app name alone identifies it well enough on a phone. */}
+          <p className="hidden sm:block text-xs text-slate-400">
+            Smart Finance Companion
+          </p>
         </div>
       </div>
 

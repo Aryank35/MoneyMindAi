@@ -69,6 +69,14 @@ const accountSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Where this account sits in the user's own ordering. Every list and
+    // dropdown in the app reads accounts from one endpoint, so sorting on
+    // this here is what makes the chosen order apply everywhere.
+    displayOrder: {
+      type: Number,
+      default: 0,
+    },
+
     // Only meaningful when type is "Credit Card". A card is modelled as an
     // account rather than its own entity: expenses already point at accounts
     // and paying a bill is already a transfer, so splitting it out would fork

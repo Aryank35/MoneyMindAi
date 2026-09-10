@@ -447,3 +447,94 @@ h4 {
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   MOBILE DENSITY
+
+   Every page was laid out for the desktop: fixed `p-6` cards, `gap-6` grids
+   and display type at `text-4xl`, none of it scaled down. On a 360px phone
+   a card's own padding alone eats 48px of the 360 available.
+
+   Following the same principle as the palette above - retune the ramp, not
+   ~640 class names - this leans on how Tailwind v4 compiles utilities:
+
+     .p-6      -> padding: calc(var(--spacing) * 6)
+     .text-4xl -> font-size: var(--text-4xl)
+
+   Because both resolve the variable at use time, narrowing the ramps here
+   compresses every page and every shared component at once, with no class
+   name touched and desktop rendering bit-for-bit unchanged.
+
+   Two rules govern what may shrink:
+
+     1. Whitespace compresses; reading text does not. Only `text-xl` and up
+        are scaled - the display sizes. `text-base` and below carry the
+        actual content and stay put, because a denser layout is worth
+        nothing if the words in it get harder to read.
+
+     2. Tap targets never fall below 44px. Narrowing --spacing also narrows
+        the `py-3` inside a button, so the interactive elements are floored
+        explicitly at the bottom of this block.
+   ========================================================================== */
+
+@media (max-width: 639px) {
+  :root {
+    /* 0.25rem -> 0.1875rem: every spacing utility to 75%. A `p-6` card
+       becomes 18px rather than 24px, returning 12px of width per side. */
+    --spacing: 0.1875rem;
+
+    /* Navbar.jsx sizes itself from this and <main> pads itself clear of it,
+       so both compress together and cannot drift. 80px of fixed chrome is
+       a lot of a phone screen to spend on a greeting. */
+    --nav-h: 3.75rem;
+
+    /* Display type only. A 2.25rem heading on a 360px screen wraps to three
+       lines and pushes the content it introduces below the fold. */
+    --text-5xl: 2rem;
+    --text-5xl--line-height: 1.15;
+    --text-4xl: 1.75rem;
+    --text-4xl--line-height: 1.2;
+    --text-3xl: 1.5rem;
+    --text-3xl--line-height: 1.25;
+    --text-2xl: 1.3rem;
+    --text-2xl--line-height: 1.3;
+    --text-xl: 1.125rem;
+    --text-xl--line-height: 1.4;
+  }
+
+  /* Rule 2. The compressed --spacing above is right for layout padding but
+     would take a button below the 44px minimum, so height is restored here
+     without giving the horizontal padding back. `line-height: 1` keeps the
+     label centred once min-height rather than padding sets the box. */
+  button,
+  [role="button"],
+  select,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  /* Several call-to-action links are plain <a> tags styled as buttons
+     ("Manage", "Link an account", "Add income first") and sat at 32-36px. A
+     background colour is what separates those from an inline prose link like
+     "Create one", which must stay inline and is deliberately not matched. */
+  a[class*="bg-"] {
+    min-height: 44px;
+  }
+
+  /* Icon-only controls need the width too, not just the height. Disabled is
+     deliberately included here and above: a button that shrinks while
+     loading would jump the layout out from under a thumb. */
+  button[aria-label] {
+    min-width: 44px;
+  }
+
+  /* Calendar cells and similar sized tiles opt out - they are grid cells
+     carrying a role="button", not controls, and a 44px floor would break
+     their aspect ratio. */
+  [role="button"].aspect-square,
+  [role="button"][class*="aspect-"] {
+    min-height: 0;
+  }
+
+  textarea {
+    min-height: 66px;
+  }
+}

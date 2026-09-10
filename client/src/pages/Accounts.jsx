@@ -9,6 +9,7 @@ import {
   updateAccount,
   setAccountRole,
   getAccountDeleteImpact,
+  reorderAccounts,
 } from "../services/accountService";
 
 import { getUserId } from "../utils/auth";
@@ -20,6 +21,7 @@ import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
 import StatementModal from "../components/common/StatementModal";
 import AccountCard from "../components/common/AccountCard";
+import ReorderList from "../components/common/ReorderList";
 
 // The two exclusive account roles, described once and reused by the cards
 // and both modals. Adding another exclusive role means one entry here.
@@ -67,6 +69,12 @@ export default function Accounts() {
   const [roleBusy, setRoleBusy] = useState(null);
 
   const [statementAccount, setStatementAccount] = useState(null);
+
+  // Reordering happens in its own modal: the cards are a multi-column grid,
+  // where "move up" is ambiguous, so ordering switches to a single list.
+  const [showReorder, setShowReorder] = useState(false);
+  const [draftOrder, setDraftOrder] = useState([]);
+  const [savingOrder, setSavingOrder] = useState(false);
 
   const [deleting, setDeleting] = useState(false);
 
@@ -222,6 +230,34 @@ export default function Accounts() {
     }
   };
 
+  const openReorder = () => {
+    setDraftOrder(accounts);
+    setShowReorder(true);
+  };
+
+  const handleSaveOrder = async () => {
+    try {
+      setSavingOrder(true);
+
+      await reorderAccounts(
+        getUserId(),
+        draftOrder.map((account) => account._id),
+      );
+
+      setShowReorder(false);
+
+      await loadAccounts();
+
+      toast.success("Order saved");
+    } catch (error) {
+      console.error(error);
+
+      toast.error(error?.response?.data?.message || "Could not save the order");
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+
   const handleToggleRole = async (account, role, label, claim) => {
     setRoleBusy(`${account._id}:${role}`);
 
@@ -312,9 +348,15 @@ export default function Accounts() {
           </p>
         </div>
 
-        <Button onClick={() => setShowCreateModal(true)} className="mb-8">
-          + Add Account
-        </Button>
+        <div className="mb-8 flex flex-wrap gap-3">
+          <Button onClick={() => setShowCreateModal(true)}>+ Add Account</Button>
+
+          {accounts.length > 1 && (
+            <Button variant="secondary" onClick={openReorder}>
+              Reorder
+            </Button>
+          )}
+        </div>
 
         {accounts.length === 0 ? (
           <EmptyState
@@ -580,6 +622,56 @@ export default function Accounts() {
 
             <Button onClick={handleSave} loading={saving}>
               Create
+            </Button>
+          </div>
+        </Modal>
+
+        <Modal
+          isOpen={showReorder}
+          onClose={() => setShowReorder(false)}
+          title="Reorder accounts"
+          maxWidth="max-w-lg"
+        >
+          <p className="mb-4 text-sm text-slate-400">
+            This order is used everywhere accounts appear — the cards here,
+            and every account picker in the app.
+          </p>
+
+          <ReorderList
+            items={draftOrder}
+            onReorder={setDraftOrder}
+            getKey={(account) => account._id}
+            renderItem={(account) => (
+              <span className="flex min-w-0 items-center justify-between gap-2">
+                <span className="truncate">
+                  {account.name}
+                  <span className="ml-2 text-xs text-slate-500">
+                    {account.type}
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs text-slate-500">
+                  {isCard(account)
+                    ? `${money(Math.max(-Number(account.balance || 0), 0))} owed`
+                    : money(account.balance)}
+                </span>
+              </span>
+            )}
+          />
+
+          <p className="mt-3 text-xs text-slate-500">
+            Drag the handle on a desktop, or use the arrows anywhere.
+          </p>
+
+          <div className="mt-6 flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setShowReorder(false)}
+              disabled={savingOrder}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveOrder} loading={savingOrder}>
+              Save Order
             </Button>
           </div>
         </Modal>

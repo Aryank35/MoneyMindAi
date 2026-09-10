@@ -44,6 +44,14 @@ export const getAccountStatement = async (id, { from, to } = {}) => {
   return response.data;
 };
 
+// Applies the user's own ordering. Every list and dropdown reads accounts
+// from the same endpoint, so this order shows up everywhere.
+export const reorderAccounts = async (userId, order) => {
+  const response = await api.put("/accounts/reorder", { userId, order });
+
+  return response.data;
+};
+
 // Every movement across every account - what the transactions view shows.
 export const getUserTransactions = async (userId, { from, to } = {}) => {
   const query = from && to ? `?from=${from}&to=${to}` : "";
