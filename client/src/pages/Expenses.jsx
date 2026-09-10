@@ -30,6 +30,7 @@ import {
   subscribeToOutbox,
 } from "../utils/offlineQueue";
 import { readCache, writeCache, cacheKey } from "../utils/localCache";
+import { evaluateExpression } from "../utils/calc";
 import { CHART_ACCENT } from "../utils/chartTheme";
 
 import { getBudgetByUser, updateBudget } from "../services/budgetService";
@@ -40,6 +41,7 @@ import ConfirmDialog from "../components/common/ConfirmDialog";
 import Modal from "../components/common/Modal";
 import TransactionsPanel from "../components/common/TransactionsPanel";
 import QuickExpenseSheet from "../components/common/QuickExpenseSheet";
+import AmountInput from "../components/common/AmountInput";
 import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
 
@@ -257,7 +259,17 @@ export default function Expenses() {
         return;
       }
 
-      const amount = Number(formData.amount);
+      // The field accepts arithmetic, so what gets saved is the resolved
+      // figure rather than the raw text.
+      const parsed = evaluateExpression(formData.amount);
+
+      if (parsed.error) {
+        toast.error(parsed.error);
+
+        return;
+      }
+
+      const amount = parsed.value;
 
       if (!Number.isFinite(amount) || amount <= 0) {
         toast.error("Amount must be greater than 0");
@@ -402,7 +414,14 @@ export default function Expenses() {
   const handleUpdateExpense = async () => {
     if (!editForm || !editTarget) return;
 
-    const amount = Number(editForm.amount);
+    const parsedEdit = evaluateExpression(editForm.amount);
+
+    if (parsedEdit.error) {
+      toast.error(parsedEdit.error);
+      return;
+    }
+
+    const amount = parsedEdit.value;
 
     if (!editForm.account) {
       toast.error("Please select an account");
@@ -855,9 +874,9 @@ export default function Expenses() {
               Amount
             </label>
 
-            <input
+            <AmountInput
               id="expense-amount"
-              type="number"
+              label=""
               placeholder="Amount"
               value={formData.amount}
               onChange={(e) =>
@@ -866,7 +885,6 @@ export default function Expenses() {
                   amount: e.target.value,
                 })
               }
-              className="w-full bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500"
             />
           </div>
 
@@ -1472,9 +1490,7 @@ export default function Expenses() {
                   )}
               </Select>
 
-              <Input
-                label="Amount"
-                type="number"
+              <AmountInput
                 value={editForm.amount}
                 onChange={(e) =>
                   setEditForm({ ...editForm, amount: e.target.value })

@@ -14,6 +14,7 @@ import {
   FiRepeat,
   FiTarget,
   FiTrendingUp,
+  FiDivide,
   FiPieChart,
   FiUsers,
   FiX,
@@ -37,6 +38,7 @@ const MORE = [
   { label: "Pots", path: "/pots", icon: FiHeart },
   { label: "Lending", path: "/lending", icon: FiUsers },
   { label: "Splits", path: "/splits", icon: FiPieChart },
+  { label: "Calculator", path: "/calculator", icon: FiDivide },
   { label: "Analytics", path: "/analytics", icon: FiBarChart2 },
 ];
 

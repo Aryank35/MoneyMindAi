@@ -17,6 +17,7 @@ import Modal from "../components/common/Modal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
+import AmountInput from "../components/common/AmountInput";
 import EmptyState from "../components/common/EmptyState";
 import { Skeleton } from "../components/common/Loader";
 import { useToast } from "../components/common/Toast";
@@ -32,6 +33,7 @@ import {
 import { getAccountsByUser } from "../services/accountService";
 import { getUserId } from "../utils/auth";
 import { money } from "../utils/incomeFormulas";
+import { evaluateExpression } from "../utils/calc";
 
 const round2 = (value) => Math.round(Number(value || 0) * 100) / 100;
 
@@ -184,14 +186,18 @@ export default function Splits() {
     tab === "open" ? !split.isFullySettled : tab === "all" ? true : split.isFullySettled,
   );
 
+  // The bill field accepts arithmetic, so the shares preview and the save
+  // both work off the resolved figure.
+  const resolvedTotal = evaluateExpression(form.totalAmount).value;
+
   const shares = useMemo(
-    () => previewShares(form.totalAmount, form.splitMethod, form.participants),
-    [form.totalAmount, form.splitMethod, form.participants],
+    () => previewShares(resolvedTotal, form.splitMethod, form.participants),
+    [resolvedTotal, form.splitMethod, form.participants],
   );
 
   const myPreviewShare = shares[form.participants.findIndex((p) => p.isMe)] || 0;
   const shareSum = round2(shares.reduce((sum, value) => sum + value, 0));
-  const billTotal = round2(form.totalAmount);
+  const billTotal = round2(resolvedTotal);
   const sharesMatch = shareSum === billTotal;
 
   // =====================================================================
@@ -229,7 +235,14 @@ export default function Splits() {
       return;
     }
 
-    if (!(Number(form.totalAmount) > 0)) {
+    const parsedTotal = evaluateExpression(form.totalAmount);
+
+    if (parsedTotal.error) {
+      toast.error(parsedTotal.error);
+      return;
+    }
+
+    if (!(parsedTotal.value > 0)) {
       toast.error("Amount must be greater than 0");
       return;
     }
@@ -255,7 +268,7 @@ export default function Splits() {
       await createSplit({
         userId: getUserId(),
         description: form.description,
-        totalAmount: Number(form.totalAmount),
+        totalAmount: parsedTotal.value,
         date: form.date,
         category: form.category,
         groupName: form.groupName,
@@ -687,11 +700,11 @@ export default function Splits() {
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
 
-          <Input
+          <AmountInput
             label="Total bill"
-            type="number"
             value={form.totalAmount}
             onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
+            hint="Add the items up here — 240 + 180 + 95"
           />
 
           <Input

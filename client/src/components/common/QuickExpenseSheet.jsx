@@ -17,6 +17,7 @@ import { getBudgetByUser } from "../../services/budgetService";
 import { enqueue } from "../../utils/offlineQueue";
 import { getUserId } from "../../utils/auth";
 import { readCache, writeCache, cacheKey } from "../../utils/localCache";
+import { evaluateExpression } from "../../utils/calc";
 import { money } from "../../utils/incomeFormulas";
 
 // =========================================================================
@@ -31,7 +32,16 @@ import { money } from "../../utils/incomeFormulas";
 // you save, the entry goes to the outbox and syncs by itself.
 // =========================================================================
 
-const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "back"];
+// Four rows of digits with an operator down the right, so splitting a bill
+// or adding a tip never needs the system keyboard.
+const KEYPAD = [
+  ["7", "8", "9", "\u00f7"],
+  ["4", "5", "6", "\u00d7"],
+  ["1", "2", "3", "-"],
+  [".", "0", "back", "+"],
+];
+
+const OPERATOR_KEYS = new Set(["+", "-", "\u00d7", "\u00f7"]);
 
 // A shortlist so the common case is one tap, with the full list behind
 // "more" for everything else.
@@ -139,6 +149,10 @@ export default function QuickExpenseSheet({ isOpen, onClose, onSaved }) {
 
   const selectedAccount = accounts.find((item) => item._id === accountId);
 
+  // The last run of digits, which is what the decimal-place and duplicate
+  // guards below should apply to - not the whole expression.
+  const lastNumber = (text) => text.split(/[+\-\u00d7\u00f7]/).pop() || "";
+
   const press = (key) => {
     if (key === "back") {
       setAmount((prev) => prev.slice(0, -1));
@@ -146,17 +160,54 @@ export default function QuickExpenseSheet({ isOpen, onClose, onSaved }) {
       return;
     }
 
-    if (key === "." && amount.includes(".")) return;
+    if (key === "clear") {
+      setAmount("");
+
+      return;
+    }
+
+    if (OPERATOR_KEYS.has(key)) {
+      // Nothing to operate on yet, and a second operator replaces the first
+      // rather than producing "20++".
+      setAmount((prev) => {
+        if (!prev) return "";
+
+        return OPERATOR_KEYS.has(prev.slice(-1))
+          ? prev.slice(0, -1) + key
+          : prev + key;
+      });
+
+      return;
+    }
+
+    if (key === ".") {
+      const tail = lastNumber(amount);
+
+      if (tail.includes(".")) return;
+
+      setAmount((prev) => (tail === "" ? `${prev}0.` : prev + key));
+
+      return;
+    }
 
     // Two decimal places is as fine as money gets.
-    if (amount.includes(".") && amount.split(".")[1]?.length >= 2) return;
+    const tail = lastNumber(amount);
 
-    setAmount((prev) => (prev === "0" && key !== "." ? key : prev + key));
+    if (tail.includes(".") && tail.split(".")[1]?.length >= 2) return;
+
+    setAmount((prev) => (prev === "0" ? key : prev + key));
   };
 
-  const value = Number(amount || 0);
+  const { value: resolved, error, isExpression } = evaluateExpression(amount);
+
+  const value = resolved ?? 0;
 
   const handleSave = async () => {
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
     if (!(value > 0)) {
       toast.error("Enter an amount");
       return;
@@ -279,12 +330,23 @@ export default function QuickExpenseSheet({ isOpen, onClose, onSaved }) {
                 Amount
               </p>
               <p
-                className={`mt-1 break-all text-5xl font-bold tabular-nums ${
-                  value > 0 ? "text-white" : "text-slate-600"
-                }`}
+                className={`mt-1 break-all font-bold tabular-nums ${
+                  isExpression ? "text-3xl" : "text-5xl"
+                } ${amount ? "text-white" : "text-slate-600"}`}
               >
-                ₹{amount || "0"}
+                {amount ? amount.replace(/^/, "₹") : "₹0"}
               </p>
+
+              {/* The running result, so a half-typed sum is never a mystery */}
+              {isExpression && (
+                <p
+                  className={`mt-1 text-2xl font-bold tabular-nums ${
+                    error ? "text-red-300" : "text-emerald-300"
+                  }`}
+                >
+                  {error ? error : `= ${money(resolved ?? 0)}`}
+                </p>
+              )}
               {selectedAccount && (
                 <p className="mt-1 text-xs text-slate-500">
                   {isCard(selectedAccount)
@@ -369,22 +431,46 @@ export default function QuickExpenseSheet({ isOpen, onClose, onSaved }) {
               />
             </div>
 
-            {/* Keypad - large targets, no system keyboard */}
-            <div className="mt-4 grid grid-cols-3 gap-2 px-5">
-              {KEYS.map((key) => (
-                <button
-                  key={key}
-                  onClick={() => press(key)}
-                  aria-label={key === "back" ? "Delete last digit" : key}
-                  className="
-                    flex h-14 items-center justify-center rounded-2xl
-                    border border-white/10 bg-slate-800 text-xl font-semibold
-                    transition active:scale-95 active:bg-slate-700
-                  "
-                >
-                  {key === "back" ? <FiDelete /> : key}
-                </button>
-              ))}
+            {/* Keypad - large targets, operators included, no system keyboard */}
+            <div className="mt-4 px-5">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs text-slate-500">
+                  Maths works — 20 + 10, or 900 + 18%
+                </p>
+                {amount && (
+                  <button
+                    onClick={() => press("clear")}
+                    className="rounded-lg px-2 py-1 text-xs text-slate-400 transition active:scale-95"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {KEYPAD.flat().map((key) => {
+                  const isOperator = OPERATOR_KEYS.has(key);
+
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => press(key)}
+                      aria-label={key === "back" ? "Delete last character" : key}
+                      className={`
+                        flex h-14 items-center justify-center rounded-2xl border
+                        text-xl font-semibold transition active:scale-95
+                        ${
+                          isOperator
+                            ? "border-indigo-400/30 bg-indigo-400/10 text-indigo-200"
+                            : "border-white/10 bg-slate-800 active:bg-slate-700"
+                        }
+                      `}
+                    >
+                      {key === "back" ? <FiDelete /> : key}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="px-5 pt-4">
