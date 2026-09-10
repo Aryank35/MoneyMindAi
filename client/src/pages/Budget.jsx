@@ -9,6 +9,7 @@ import {
   FiX,
   FiChevronUp,
   FiChevronDown,
+  FiMenu,
 } from "react-icons/fi";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
@@ -36,6 +37,7 @@ import { useToast } from "../components/common/Toast";
 import CategoryProgressBar from "../components/common/CategoryProgressBar";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import { moveItem } from "../utils/reorder";
+import { useDragReorder } from "../utils/dragReorder";
 import { money } from "../utils/incomeFormulas";
 
 // =========================
@@ -69,7 +71,21 @@ const inputValueToMonthLabel = (value) => {
   return parsed.toLocaleString("default", { month: "long", year: "numeric" });
 };
 
+// Form rows need an identity of their own. Categories are stored as a plain
+// array with no id, and keying rows by array index makes React reuse whatever
+// node already sits at a position instead of following the row that moved -
+// which drops focus and the caret the moment a row is dragged past another.
+// The uid is form-local and never sent: the save payload maps named fields.
+let categoryRowSeq = 0;
+
+const nextCategoryRowId = () => {
+  categoryRowSeq += 1;
+
+  return `category-row-${categoryRowSeq}`;
+};
+
 const emptyCategory = () => ({
+  uid: nextCategoryRowId(),
   name: "",
   limit: "",
   accountId: "",
@@ -112,6 +128,17 @@ export default function Budget() {
       ...prev,
       categories: moveItem(prev.categories, index, index + direction),
     }));
+
+  const setCategoryOrder = (categories) =>
+    setBudgetForm((prev) => ({ ...prev, categories }));
+
+  // Dragging is the desktop gesture; the arrows on each row stay the way to
+  // reorder by touch and keyboard, since HTML5 drag events never fire on a
+  // touchscreen.
+  const categoryDrag = useDragReorder({
+    items: budgetForm.categories,
+    onReorder: setCategoryOrder,
+  });
 
   const handleAddCategory = () => {
     setBudgetForm((prev) => ({
@@ -245,6 +272,7 @@ export default function Budget() {
         categories:
           currentBudget.categories?.length > 0
             ? currentBudget.categories.map((item) => ({
+                uid: nextCategoryRowId(),
                 name: item.name || "",
                 limit: item.limit || "",
                 accountId: item.accountId || "",
@@ -330,6 +358,7 @@ export default function Budget() {
       categories:
         budget?.categories?.length > 0
           ? budget.categories.map((item) => ({
+              uid: nextCategoryRowId(),
               name: item.name || "",
               limit: item.limit || "",
               accountId: item.accountId || "",
@@ -947,101 +976,121 @@ export default function Budget() {
         <div className="space-y-4">
           {budgetForm.categories.map((category, index) => (
             <div
-              key={index}
-              className="bg-slate-800/40 border border-white/5 rounded-2xl p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3"
+              key={category.uid}
+              {...categoryDrag.rowProps(index)}
+              className={`flex items-start gap-2 rounded-2xl border bg-slate-800/40 p-4 transition ${
+                categoryDrag.isDragging(index)
+                  ? "border-indigo-400/50 opacity-50"
+                  : categoryDrag.isOver(index)
+                    ? "border-indigo-400/50"
+                    : "border-white/5"
+              }`}
             >
-              {/* Category */}
-
-              <Input
-                type="text"
-                aria-label="Category name"
-                placeholder="Category"
-                value={category.name}
-                onChange={(e) =>
-                  handleCategoryChange(index, "name", e.target.value)
-                }
-              />
-
-              {/* Limit */}
-
-              <Input
-                type="number"
-                aria-label="Category budget limit"
-                placeholder="Budget"
-                value={category.limit}
-                onChange={(e) =>
-                  handleCategoryChange(index, "limit", e.target.value)
-                }
-              />
-
-              {/* Account */}
-
-              <Select
-                aria-label="Category account"
-                value={category.accountId}
-                onChange={(e) =>
-                  handleCategoryChange(index, "accountId", e.target.value)
-                }
+              {/* Grip. Hidden on a phone, where drag events never fire and
+                  the arrows below are the way to reorder. */}
+              <span
+                {...categoryDrag.handleProps(index)}
+                title="Drag to reorder"
+                aria-hidden="true"
+                className="hidden shrink-0 cursor-grab pt-3 text-slate-500 active:cursor-grabbing sm:block"
               >
-                <option value="">Select Account</option>
+                <FiMenu />
+              </span>
 
-                {accounts.map((account) => (
-                  <option key={account._id} value={account._id}>
-                    {account.icon} {account.name} (₹
-                    {Number(account.balance).toLocaleString()})
-                  </option>
-                ))}
-              </Select>
+              <div className="grid min-w-0 flex-1 grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                {/* Category */}
 
-              {/* Type + Remove */}
-
-              <div className="flex gap-3">
-                <Select
-                  aria-label="Category type"
-                  className="flex-1"
-                  value={category.type}
+                <Input
+                  type="text"
+                  aria-label="Category name"
+                  placeholder="Category"
+                  value={category.name}
                   onChange={(e) =>
-                    handleCategoryChange(index, "type", e.target.value)
+                    handleCategoryChange(index, "name", e.target.value)
+                  }
+                />
+
+                {/* Limit */}
+
+                <Input
+                  type="number"
+                  aria-label="Category budget limit"
+                  placeholder="Budget"
+                  value={category.limit}
+                  onChange={(e) =>
+                    handleCategoryChange(index, "limit", e.target.value)
+                  }
+                />
+
+                {/* Account */}
+
+                <Select
+                  aria-label="Category account"
+                  value={category.accountId}
+                  onChange={(e) =>
+                    handleCategoryChange(index, "accountId", e.target.value)
                   }
                 >
-                  <option value="Expense">Expense</option>
+                  <option value="">Select Account</option>
 
-                  <option value="Savings">Savings</option>
-
-                  <option value="Investment">Investment</option>
-
-                  <option value="Bill">Bill</option>
+                  {accounts.map((account) => (
+                    <option key={account._id} value={account._id}>
+                      {account.icon} {account.name} (₹
+                      {Number(account.balance).toLocaleString()})
+                    </option>
+                  ))}
                 </Select>
 
-                <div className="flex shrink-0 gap-1 self-start">
-                  <button
-                    type="button"
-                    onClick={() => handleMoveCategory(index, -1)}
-                    disabled={index === 0}
-                    aria-label="Move category up"
-                    className="rounded-lg border border-white/10 p-2 text-slate-300 transition active:scale-95 disabled:opacity-30"
-                  >
-                    <FiChevronUp />
-                  </button>
+                {/* Type + Remove */}
 
-                  <button
-                    type="button"
-                    onClick={() => handleMoveCategory(index, 1)}
-                    disabled={index === budgetForm.categories.length - 1}
-                    aria-label="Move category down"
-                    className="rounded-lg border border-white/10 p-2 text-slate-300 transition active:scale-95 disabled:opacity-30"
+                <div className="flex gap-3">
+                  <Select
+                    aria-label="Category type"
+                    className="flex-1"
+                    value={category.type}
+                    onChange={(e) =>
+                      handleCategoryChange(index, "type", e.target.value)
+                    }
                   >
-                    <FiChevronDown />
-                  </button>
+                    <option value="Expense">Expense</option>
 
-                  <Button
-                    type="button"
-                    variant="danger"
-                    size="sm"
-                    icon={FiX}
-                    aria-label="Remove category"
-                    onClick={() => handleRemoveCategory(index)}
-                  />
+                    <option value="Savings">Savings</option>
+
+                    <option value="Investment">Investment</option>
+
+                    <option value="Bill">Bill</option>
+                  </Select>
+
+                  <div className="flex shrink-0 gap-1 self-start">
+                    <button
+                      type="button"
+                      onClick={() => handleMoveCategory(index, -1)}
+                      disabled={index === 0}
+                      aria-label="Move category up"
+                      className="rounded-lg border border-white/10 p-2 text-slate-300 transition active:scale-95 disabled:opacity-30"
+                    >
+                      <FiChevronUp />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleMoveCategory(index, 1)}
+                      disabled={index === budgetForm.categories.length - 1}
+                      aria-label="Move category down"
+                      className="rounded-lg border border-white/10 p-2 text-slate-300 transition active:scale-95 disabled:opacity-30"
+                    >
+                      <FiChevronDown />
+                    </button>
+
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      icon={FiX}
+                      aria-label="Remove category"
+                      onClick={() => handleRemoveCategory(index)}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
