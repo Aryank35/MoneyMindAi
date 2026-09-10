@@ -40,7 +40,7 @@ const MORE = [
   { label: "Analytics", path: "/analytics", icon: FiBarChart2 },
 ];
 
-export default function MobileNav() {
+export default function MobileNav({ onQuickAdd }) {
   const [showMore, setShowMore] = useState(false);
   const navigate = useNavigate();
 
@@ -139,7 +139,7 @@ export default function MobileNav() {
         {/* Quick add sits in the thumb's natural resting spot. */}
         <div className="flex flex-1 justify-center">
           <button
-            onClick={() => navigate("/expenses")}
+            onClick={onQuickAdd}
             aria-label="Add an expense"
             className="
               -mt-5 flex h-14 w-14 items-center justify-center rounded-2xl

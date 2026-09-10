@@ -29,6 +29,7 @@ import {
   removeQueued,
   subscribeToOutbox,
 } from "../utils/offlineQueue";
+import { readCache, writeCache, cacheKey } from "../utils/localCache";
 import { CHART_ACCENT } from "../utils/chartTheme";
 
 import { getBudgetByUser, updateBudget } from "../services/budgetService";
@@ -37,6 +38,8 @@ import { PageLoader } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import Modal from "../components/common/Modal";
+import TransactionsPanel from "../components/common/TransactionsPanel";
+import QuickExpenseSheet from "../components/common/QuickExpenseSheet";
 import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
 
@@ -71,7 +74,16 @@ const money = (value) =>
 export default function Expenses() {
   const toast = useToast();
 
-  const [expenses, setExpenses] = useState([]);
+  // Seeded from the last successful load so the form is usable on the first
+  // paint. A cold start on the free tier can take most of a minute, and
+  // waiting on it left nothing to select and no way to queue an entry.
+  const cachedUserId = getUserId();
+
+  const [expenses, setExpenses] = useState(() =>
+    readCache(cacheKey(cachedUserId, "expenses"), []),
+  );
+
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
 
   const [formData, setFormData] = useState({
     account: "",
@@ -81,15 +93,23 @@ export default function Expenses() {
     date: new Date().toISOString().split("T")[0],
     time: new Date().toTimeString().slice(0, 5),
   });
-  const [budgetCategories, setBudgetCategories] = useState([]);
+  const [budgetCategories, setBudgetCategories] = useState(() =>
+    readCache(cacheKey(cachedUserId, "budgetCategories"), []),
+  );
 
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
 
   const [newCategory, setNewCategory] = useState("");
 
-  const [budget, setBudget] = useState(null);
+  const [budget, setBudget] = useState(() =>
+    readCache(cacheKey(cachedUserId, "budget"), null),
+  );
 
-  const [loading, setLoading] = useState(true);
+  // Nothing cached means a first-ever visit, which is the only case where a
+  // full-page loader is the right answer.
+  const [loading, setLoading] = useState(
+    () => readCache(cacheKey(cachedUserId, "accounts"), []).length === 0,
+  );
 
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -105,9 +125,15 @@ export default function Expenses() {
 
   const [selectedAccount, setSelectedAccount] = useState("all");
 
-  const [accounts, setAccounts] = useState([]);
+  const [accounts, setAccounts] = useState(() =>
+    readCache(cacheKey(cachedUserId, "accounts"), []),
+  );
 
   const { isReachable } = useConnection();
+
+  // "expenses" is spending only; "transactions" is every movement across
+  // every account, spending or not.
+  const [view, setView] = useState("expenses");
 
   // Entries made while the API was unreachable. Shown alongside saved ones
   // so the user is never left wondering whether their expense registered.
@@ -127,11 +153,15 @@ export default function Expenses() {
     try {
       const response = await getExpensesByUser(getUserId());
 
-      setExpenses(response.data || []);
+      const list = response.data || [];
+
+      setExpenses(list);
+      writeCache(cacheKey(getUserId(), "expenses"), list);
     } catch (error) {
       console.error(error);
 
-      setExpenses([]);
+      // Whatever was cached stays on screen - a failed refresh must not
+      // blank the list the user was already looking at.
     }
   };
 
@@ -142,6 +172,7 @@ export default function Expenses() {
       const accountList = response.data || [];
 
       setAccounts(accountList);
+      writeCache(cacheKey(getUserId(), "accounts"), accountList);
 
       if (accountList.length > 0 && !formData.account) {
         setFormData((prev) => ({
@@ -160,11 +191,21 @@ export default function Expenses() {
 
       const currentBudget = response.data?.[0];
 
-      setBudget(currentBudget);
+      if (currentBudget) {
+        setBudget(currentBudget);
+        writeCache(cacheKey(getUserId(), "budget"), currentBudget);
+      }
 
       const categories = currentBudget?.categories || [];
 
-      setBudgetCategories(categories);
+      if (categories.length) {
+        setBudgetCategories(categories);
+        writeCache(cacheKey(getUserId(), "budgetCategories"), categories);
+        writeCache(
+          cacheKey(getUserId(), "categories"),
+          categories.map((item) => item.name),
+        );
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -188,7 +229,11 @@ export default function Expenses() {
     try {
       // Budget first: with no budget there are no categories to pick, so a
       // missing category is a symptom, not the thing to report.
-      if (!budget) {
+      // A budget is required to book an expense against a category, but it
+      // comes from the server. Refusing here while the API was still waking
+      // meant the offline queue below could never be reached on a cold
+      // start - the exact case it exists for.
+      if (!budget && isReachable) {
         toast.error("Please create a budget first");
 
         return;
@@ -318,6 +363,20 @@ export default function Expenses() {
 
     return () =>
       window.removeEventListener("moneymind:outbox-flushed", onFlushed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The quick-add sheet can be opened from the bottom nav on any page.
+  useEffect(() => {
+    const onAdded = () => {
+      fetchExpenses();
+      fetchAccounts();
+    };
+
+    window.addEventListener("moneymind:expense-added", onAdded);
+
+    return () =>
+      window.removeEventListener("moneymind:expense-added", onAdded);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -533,11 +592,56 @@ export default function Expenses() {
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-4xl font-bold">Expenses</h1>
+          <h1 className="text-4xl font-bold">
+            {view === "expenses" ? "Expenses" : "Transactions"}
+          </h1>
 
-          <p className="text-slate-400 mt-2">Track and manage your spending</p>
+          <p className="text-slate-400 mt-2">
+            {view === "expenses"
+              ? "Track and manage your spending"
+              : "Everything that moved through your accounts"}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Phones get the sheet; the inline form below is the desktop path. */}
+          <button
+            onClick={() => setShowQuickAdd(true)}
+            className="flex items-center gap-2 rounded-xl bg-indigo-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition active:scale-95 lg:hidden"
+          >
+            <FiPlus />
+            Quick add
+          </button>
+
+        <div className="flex flex-wrap gap-1 rounded-xl bg-slate-800 p-1">
+          {[
+            { key: "expenses", label: "Expenses" },
+            { key: "transactions", label: "All transactions" },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setView(tab.key)}
+              className={`rounded-lg px-4 py-2 text-sm transition ${
+                view === tab.key
+                  ? "bg-indigo-400/15 text-indigo-200"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
         </div>
       </div>
+
+      {view === "transactions" ? (
+        <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
+          {/* Keyed on the expense count so adding or removing an expense
+              refreshes the ledger without its own reload button. */}
+          <TransactionsPanel refreshKey={expenses.length} />
+        </div>
+      ) : (
+      <>
 
       <motion.div
         className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"
@@ -1302,6 +1406,18 @@ export default function Expenses() {
           </table>
         </div>
       </div>
+
+      </>
+      )}
+
+      <QuickExpenseSheet
+        isOpen={showQuickAdd}
+        onClose={() => setShowQuickAdd(false)}
+        onSaved={() => {
+          fetchExpenses();
+          fetchAccounts();
+        }}
+      />
 
       <Modal
         isOpen={!!editTarget}

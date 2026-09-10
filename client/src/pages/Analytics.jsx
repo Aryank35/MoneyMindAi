@@ -29,6 +29,7 @@ import Modal from "../components/common/Modal";
 import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import CategoryProgressBar from "../components/common/CategoryProgressBar";
+import { compactAmount } from "../utils/incomeFormulas";
 
 // "YYYY-MM-DD" in the viewer's own timezone. Every calendar key in this
 // file goes through here so cell totals and day listings agree.
@@ -529,7 +530,7 @@ export default function Analytics() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="bg-white/5 border border-white/10 rounded-2xl p-6 mt-6"
+        className="bg-white/5 border border-white/10 rounded-2xl p-3 sm:p-6 mt-6"
       >
         <div className="flex items-center justify-between mb-6">
           <button
@@ -555,12 +556,19 @@ export default function Analytics() {
             →
           </button>
         </div>
-        <h3 className="text-xl font-semibold mb-5">Spending Calendar</h3>
+        <h3 className="text-lg sm:text-xl font-semibold mb-4 sm:mb-5">
+          Spending Calendar
+        </h3>
 
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-            <div key={day} className="text-center font-semibold text-slate-400">
-              {day}
+            <div
+              key={day}
+              className="text-center text-[10px] sm:text-sm font-semibold text-slate-400 pb-1"
+            >
+              {/* Three letters do not fit a phone-width column. */}
+              <span className="sm:hidden">{day[0]}</span>
+              <span className="hidden sm:inline">{day}</span>
             </div>
           ))}
 
@@ -592,40 +600,74 @@ export default function Analytics() {
                   }
                 }}
                 className={`
-    relative
-    h-24
-    rounded-2xl
+    flex flex-col justify-between overflow-hidden
+    aspect-square sm:aspect-auto sm:h-24
+    rounded-lg sm:rounded-2xl
     cursor-pointer
-    p-3
+    p-1 sm:p-3
     border
     transition-all
     duration-200
-    hover:scale-105
+    sm:hover:scale-105
     hover:border-indigo-400
     ${selectedDate === dateKey ? "ring-2 ring-indigo-500" : "border-white/10"}
     ${getCellColor(amount)}
   `}
               >
-                <div className="flex justify-between items-start">
-                  <span className="font-semibold text-sm">{day}</span>
+                <div className="flex justify-between items-start gap-1">
+                  <span className="font-semibold text-[11px] sm:text-sm leading-none">
+                    {day}
+                  </span>
 
+                  {/* The figure itself flags a spend on a phone; the dot would
+                      only take width off it. */}
                   {amount > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-white" />
+                    <span className="hidden sm:block w-2 h-2 rounded-full bg-white shrink-0" />
                   )}
                 </div>
 
-                <div className="absolute bottom-2 left-3">
+                <div className="min-w-0">
                   {amount > 0 ? (
-                    <p className="text-xs font-medium">
-                      ₹{amount.toLocaleString()}
+                    <p className="font-semibold sm:font-medium text-[10px] sm:text-xs leading-none tabular-nums truncate">
+                      {/* A full "₹17,000" cannot fit a ~30px cell, so the
+                          phone gets "17k" and the colour carries the scale.
+                          The full figure stays in the cell's aria-label. */}
+                      <span className="sm:hidden">{compactAmount(amount)}</span>
+
+                      <span className="hidden sm:inline">
+                        ₹{amount.toLocaleString("en-IN")}
+                      </span>
                     </p>
                   ) : (
-                    <p className="text-xs text-slate-500">No Spend</p>
+                    <p className="hidden sm:block text-xs text-slate-500">
+                      No Spend
+                    </p>
                   )}
                 </div>
               </div>
             );
           })}
+        </div>
+
+        {/* Abbreviating the figure on a phone leans more weight on the cell
+            colour, so the scale it encodes is spelled out. Thresholds mirror
+            getCellColor. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-4 text-[10px] sm:text-xs text-slate-400">
+          {[
+            ["bg-slate-800", "No spend"],
+            ["bg-green-500/20", "Under ₹500"],
+            ["bg-yellow-500/20", "₹500 - ₹1k"],
+            ["bg-orange-500/20", "₹1k - ₹3k"],
+            ["bg-red-500/20", "₹3k+"],
+          ].map(([swatch, label]) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                className={`w-3 h-3 rounded border border-white/10 shrink-0 ${swatch}`}
+              />
+              {label}
+            </span>
+          ))}
         </div>
       </motion.div>
 

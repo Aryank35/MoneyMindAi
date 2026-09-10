@@ -4,12 +4,17 @@ import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
 import MobileNav from "./MobileNav";
 import ConnectionBanner from "../common/ConnectionBanner";
+import QuickExpenseSheet from "../common/QuickExpenseSheet";
 import { getDashboardData } from "../../services/dashboardService";
 import { getUserId } from "../../utils/auth";
 import { computeFinancialHealth } from "../../utils/financialHealth";
 
 export default function DashboardLayout({ children }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // The quick-add sheet lives here so the bottom nav can open it from any
+  // page without each page having to mount its own copy.
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [health, setHealth] = useState(null);
 
   // Escape-key-to-close for the mobile sidebar drawer.
@@ -129,7 +134,17 @@ export default function DashboardLayout({ children }) {
       </main>
 
       {/* Bottom tab bar - phones only; the sidebar covers lg and up. */}
-      <MobileNav />
+      <MobileNav onQuickAdd={() => setShowQuickAdd(true)} />
+
+      <QuickExpenseSheet
+        isOpen={showQuickAdd}
+        onClose={() => setShowQuickAdd(false)}
+        onSaved={() =>
+          // Pages listen for this and refetch, so an expense added from any
+          // screen shows up without a manual reload.
+          window.dispatchEvent(new CustomEvent("moneymind:expense-added"))
+        }
+      />
     </div>
   );
 }

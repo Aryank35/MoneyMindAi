@@ -44,6 +44,15 @@ export const getAccountStatement = async (id, { from, to } = {}) => {
   return response.data;
 };
 
+// Every movement across every account - what the transactions view shows.
+export const getUserTransactions = async (userId, { from, to } = {}) => {
+  const query = from && to ? `?from=${from}&to=${to}` : "";
+
+  const response = await api.get(`/accounts/transactions/${userId}${query}`);
+
+  return response.data;
+};
+
 // What deleting this account leaves behind - shown in the confirmation.
 export const getAccountDeleteImpact = async (id) => {
   const response = await api.get(`/accounts/${id}/delete-impact`);

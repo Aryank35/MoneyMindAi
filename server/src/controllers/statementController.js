@@ -25,7 +25,7 @@ import {
 
 // Expense.accountId is a String (unlike Income and Transfer, which store
 // ObjectIds), so it is matched on the string form.
-const collectEntries = async (account) => {
+export const collectEntries = async (account) => {
   const id = account._id;
 
   // Every model that can move this account's balance has to be here, or the
@@ -426,5 +426,104 @@ export const getCardsOverview = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+// =========================================================================
+// ALL TRANSACTIONS
+//
+// Every movement across every account, in one list. The account statement
+// answers "what happened to this account"; this answers "what happened to my
+// money", which is what the transactions view on the expenses page needs.
+//
+// Spending totals are deliberately kept separate from the outflow total:
+// money moved into a pot or lent to a friend leaves the account but is not
+// spending, and folding it into an expense figure would wreck the budget.
+// =========================================================================
+
+const SPEND_KINDS = new Set(["expense", "split"]);
+
+export const getUserTransactions = async (req, res) => {
+  try {
+    const accounts = await Account.find({ userId: req.params.userId });
+
+    const now = new Date();
+
+    const from = req.query.from
+      ? new Date(req.query.from)
+      : new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const to = req.query.to
+      ? new Date(req.query.to)
+      : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const rows = [];
+
+    for (const account of accounts) {
+      const entries = await collectEntries(account);
+
+      for (const entry of entries) {
+        const date = new Date(entry.date);
+
+        if (date < from || date > to) continue;
+
+        rows.push({
+          ...entry,
+          accountId: account._id,
+          accountName: account.name,
+          accountType: account.type,
+        });
+      }
+    }
+
+    rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const inflow = rows
+      .filter((row) => row.amount > 0)
+      .reduce((total, row) => total + row.amount, 0);
+
+    const outflow = rows
+      .filter((row) => row.amount < 0)
+      .reduce((total, row) => total - row.amount, 0);
+
+    // What was actually spent, as opposed to merely moved.
+    const spending = rows
+      .filter((row) => SPEND_KINDS.has(row.kind))
+      .reduce((total, row) => total - row.amount, 0);
+
+    const byKind = [
+      ...rows
+        .reduce((map, row) => {
+          const entry = map.get(row.kind) || { kind: row.kind, count: 0, total: 0 };
+
+          entry.count += 1;
+          entry.total += Math.abs(row.amount);
+          map.set(row.kind, entry);
+
+          return map;
+        }, new Map())
+        .values(),
+    ].sort((a, b) => b.total - a.total);
+
+    res.json({
+      success: true,
+      data: {
+        period: { from, to },
+        transactions: rows,
+        byKind,
+        totals: {
+          count: rows.length,
+          inflow,
+          outflow,
+          net: inflow - outflow,
+          spending,
+          // Left the account without being spending: pots, lending, splits
+          // advanced for other people, transfers between your own accounts.
+          movedNotSpent: outflow - spending,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

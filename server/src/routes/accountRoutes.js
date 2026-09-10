@@ -10,6 +10,7 @@ import {
 import {
   getAccountStatement,
   getCardsOverview,
+  getUserTransactions,
 } from "../controllers/statementController.js";
 
 const router = express.Router();
@@ -20,6 +21,9 @@ router.get("/user/:userId", getAccountsByUser);
 
 // Declared before "/:id/..." so "cards" is not read as an account id.
 router.get("/cards/:userId", getCardsOverview);
+
+// Every movement across every account, for the transactions view.
+router.get("/transactions/:userId", getUserTransactions);
 
 router.get("/:id/statement", getAccountStatement);
 
