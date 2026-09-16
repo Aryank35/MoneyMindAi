@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   FiAlertCircle,
+  FiEdit2,
+  FiTrash2,
   FiArrowDownLeft,
   FiArrowUpRight,
   FiInbox,
@@ -12,25 +14,11 @@ import { Skeleton } from "./Loader";
 import { getUserTransactions } from "../../services/accountService";
 import { getUserId } from "../../utils/auth";
 import { money } from "../../utils/incomeFormulas";
-
-// Everything that can move an account balance, and how to describe it.
-// `spend` marks the kinds that are genuinely spending - the rest left the
-// account without being spent, which is why the two totals are shown apart.
-const KINDS = {
-  expense: { label: "Expense", spend: true, tone: "text-red-300" },
-  split: { label: "Split share", spend: true, tone: "text-red-300" },
-  income: { label: "Income", tone: "text-emerald-300" },
-  epf: { label: "EPF", tone: "text-cyan-300" },
-  "transfer-in": { label: "Transfer in", tone: "text-emerald-300" },
-  "transfer-out": { label: "Transfer out", tone: "text-slate-300" },
-  "pot-funding": { label: "Into a pot", tone: "text-indigo-300" },
-  "pot-withdrawal": { label: "Out of a pot", tone: "text-indigo-300" },
-  lent: { label: "Lent out", tone: "text-amber-300" },
-  borrowed: { label: "Borrowed", tone: "text-amber-300" },
-  "repayment-in": { label: "Repaid to you", tone: "text-emerald-300" },
-  "repayment-out": { label: "You repaid", tone: "text-slate-300" },
-  "split-advance": { label: "Advanced on a split", tone: "text-amber-300" },
-};
+import {
+  TRANSACTION_KINDS as KINDS,
+  kindMeta,
+  isSpendKind,
+} from "../../constants/transactionKinds";
 
 const RANGES = [
   { key: "thisMonth", label: "This month" },
@@ -70,16 +58,26 @@ const formatDate = (value) =>
     year: "numeric",
   });
 
-// Every movement across every account. Read-only on purpose: each kind is
-// edited on the page that owns it, and letting a loan be edited as if it
-// were an expense would put the two out of step.
-export default function TransactionsPanel({ refreshKey }) {
+// Every movement across every account, and the one place the Expenses page
+// lists activity. Only expense rows offer actions: each other kind is edited
+// on the page that owns it, and letting a loan be edited as if it were an
+// expense would put the two out of step.
+export default function TransactionsPanel({
+  refreshKey,
+  // Supplied by the Expenses page so the one activity list can also narrow to
+  // a single account or card, and so the rows that CAN be edited - expenses -
+  // carry their actions here rather than needing a second table.
+  accounts = [],
+  onEditExpense,
+  onDeleteExpense,
+}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState("thisMonth");
   const [kindFilter, setKindFilter] = useState("all");
   const [flow, setFlow] = useState("all");
   const [search, setSearch] = useState("");
+  const [accountFilter, setAccountFilter] = useState("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -127,14 +125,28 @@ export default function TransactionsPanel({ refreshKey }) {
         .join(" ")
         .toLowerCase();
 
+      // "spending" is a group, not a kind: what was genuinely spent rather
+      // than merely moved out of an account.
+      const matchesKind =
+        kindFilter === "all" ||
+        (kindFilter === "spending"
+          ? isSpendKind(row.kind)
+          : row.kind === kindFilter);
+
       return (
-        (kindFilter === "all" || row.kind === kindFilter) &&
+        matchesKind &&
+        (accountFilter === "all" ||
+          String(row.accountId) === String(accountFilter)) &&
         (flow === "all" ||
           (flow === "out" ? row.amount < 0 : row.amount > 0)) &&
         haystack.includes(search.toLowerCase())
       );
     });
-  }, [data?.transactions, kindFilter, flow, search]);
+  }, [data?.transactions, kindFilter, accountFilter, flow, search]);
+
+  // Only expenses are editable from here, and only when the host page has
+  // said how. Everything else is owned by another page.
+  const canEdit = Boolean(onEditExpense || onDeleteExpense);
 
   const totals = data?.totals || {
     count: 0,
@@ -218,12 +230,31 @@ export default function TransactionsPanel({ refreshKey }) {
           className="rounded-xl border border-white/10 bg-slate-800 p-2.5 text-sm"
         >
           <option value="all">All types</option>
+          <option value="spending">Spending only</option>
           {(data?.byKind || []).map((entry) => (
             <option key={entry.kind} value={entry.kind}>
               {KINDS[entry.kind]?.label || entry.kind} ({entry.count})
             </option>
           ))}
         </select>
+
+        {accounts.length > 0 && (
+          <select
+            aria-label="Filter by account"
+            value={accountFilter}
+            onChange={(e) => setAccountFilter(e.target.value)}
+            className="rounded-xl border border-white/10 bg-slate-800 p-2.5 text-sm"
+          >
+            <option value="all">All accounts &amp; cards</option>
+
+            {accounts.map((account) => (
+              <option key={account._id} value={account._id}>
+                {account.name}
+                {account.type === "Credit Card" ? " (card)" : ""}
+              </option>
+            ))}
+          </select>
+        )}
 
         <select
           aria-label="Filter by direction"
@@ -254,14 +285,12 @@ export default function TransactionsPanel({ refreshKey }) {
                 <th className="p-3">Type</th>
                 <th className="p-3">Account</th>
                 <th className="p-3 text-right">Amount</th>
+                {canEdit && <th className="p-3 text-center">Action</th>}
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => {
-                const meta = KINDS[row.kind] || {
-                  label: row.kind,
-                  tone: "text-slate-300",
-                };
+                const meta = kindMeta(row.kind);
 
                 return (
                   <tr key={row.id} className="border-t border-white/5">
@@ -307,6 +336,42 @@ export default function TransactionsPanel({ refreshKey }) {
                       {row.amount >= 0 ? "+" : "−"}
                       {money(Math.abs(row.amount))}
                     </td>
+
+                    {canEdit && (
+                      <td className="p-3">
+                        {row.kind === "expense" ? (
+                          <div className="flex items-center justify-center gap-3">
+                            {onEditExpense && (
+                              <button
+                                type="button"
+                                onClick={() => onEditExpense(row.id)}
+                                aria-label={`Edit ${row.label}`}
+                                className="text-slate-400 transition-colors hover:text-white"
+                              >
+                                <FiEdit2 size={16} />
+                              </button>
+                            )}
+
+                            {onDeleteExpense && (
+                              <button
+                                type="button"
+                                onClick={() => onDeleteExpense(row.id)}
+                                aria-label={`Delete ${row.label}`}
+                                className="text-red-400 transition-colors hover:text-red-300"
+                              >
+                                <FiTrash2 size={16} />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          // Owned by another page, so there is deliberately
+                          // nothing to press here.
+                          <span className="block text-center text-xs text-slate-600">
+                            —
+                          </span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

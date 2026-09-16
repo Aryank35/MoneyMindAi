@@ -135,7 +135,9 @@ export default function Expenses() {
 
   // "expenses" is spending only; "transactions" is every movement across
   // every account, spending or not.
-  const [view, setView] = useState("expenses");
+  // Activity leads: it is the full picture across every account and card.
+  // The expenses view remains for adding and bulk-managing spend records.
+  const [view, setView] = useState("transactions");
 
   // Entries made while the API was unreachable. Shown alongside saved ones
   // so the user is never left wondering whether their expense registered.
@@ -612,13 +614,13 @@ export default function Expenses() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-4xl font-bold">
-            {view === "expenses" ? "Expenses" : "Transactions"}
+            {view === "expenses" ? "Expenses" : "Activity"}
           </h1>
 
           <p className="text-slate-400 mt-2">
             {view === "expenses"
-              ? "Track and manage your spending"
-              : "Everything that moved through your accounts"}
+              ? "Add and manage your spend records"
+              : "Every transaction across your accounts and cards"}
           </p>
         </div>
 
@@ -634,8 +636,8 @@ export default function Expenses() {
 
         <div className="flex flex-wrap gap-1 rounded-xl bg-slate-800 p-1">
           {[
-            { key: "expenses", label: "Expenses" },
-            { key: "transactions", label: "All transactions" },
+            { key: "transactions", label: "Activity" },
+            { key: "expenses", label: "Manage expenses" },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -657,7 +659,20 @@ export default function Expenses() {
         <div className="rounded-2xl border border-white/10 bg-slate-900 p-5">
           {/* Keyed on the expense count so adding or removing an expense
               refreshes the ledger without its own reload button. */}
-          <TransactionsPanel refreshKey={expenses.length} />
+          <TransactionsPanel
+            refreshKey={expenses.length}
+            accounts={accounts}
+            onEditExpense={(id) => {
+              const expense = expenses.find((item) => item._id === id);
+
+              if (expense) openEditExpense(expense);
+            }}
+            onDeleteExpense={(id) => {
+              const expense = expenses.find((item) => item._id === id);
+
+              if (expense) requestDeleteExpense(expense);
+            }}
+          />
         </div>
       ) : (
       <>

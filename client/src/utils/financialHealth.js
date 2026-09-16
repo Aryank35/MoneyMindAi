@@ -29,6 +29,11 @@ export function computeFinancialHealth(dashboardData = {}) {
     weeklyLimit = 0,
     savingsRate = 0,
     expenses = [],
+    // The ledger-backed overview works these out across every kind of
+    // spending, splits included, so it passes them in rather than having them
+    // re-derived from Expense rows alone. The shell still sends neither.
+    todaySpent: providedTodaySpent,
+    weekSpent: providedWeekSpent,
   } = dashboardData || {};
 
   const budgetUsed =
@@ -36,15 +41,19 @@ export function computeFinancialHealth(dashboardData = {}) {
 
   const today = todayKey();
 
-  const todaySpent = expenses
-    .filter((expense) => expense.expenseDate?.split("T")[0] === today)
-    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const todaySpent =
+    providedTodaySpent ??
+    expenses
+      .filter((expense) => expense.expenseDate?.split("T")[0] === today)
+      .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
   const firstDayOfWeek = startOfWeek();
 
-  const weekSpent = expenses
-    .filter((expense) => new Date(expense.expenseDate) >= firstDayOfWeek)
-    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const weekSpent =
+    providedWeekSpent ??
+    expenses
+      .filter((expense) => new Date(expense.expenseDate) >= firstDayOfWeek)
+      .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
   let score = 100;
 

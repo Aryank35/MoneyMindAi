@@ -1,8 +1,5 @@
-import { Link } from "react-router-dom";
-import DashboardLayout from "../components/layout/DashboardLayout";
-import AccountCard from "../components/common/AccountCard";
-import { getPotOverview } from "../services/potService";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ResponsiveContainer,
@@ -14,21 +11,27 @@ import {
   Tooltip,
 } from "recharts";
 import {
-  FiTarget,
+  FiArrowDownLeft,
+  FiArrowRight,
+  FiArrowUpRight,
   FiBriefcase,
-  FiBarChart2,
+  FiCreditCard,
   FiInbox,
+  FiPieChart,
+  FiTarget,
+  FiTrendingUp,
 } from "react-icons/fi";
 
+import DashboardLayout from "../components/layout/DashboardLayout";
+import AccountCard from "../components/common/AccountCard";
 import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
-import { getDashboardData } from "../services/dashboardService";
+
+import { getDashboardOverview } from "../services/dashboardService";
 import { getUserId } from "../utils/auth";
-import {
-  CHART_ACCENT,
-  CHART_AXIS,
-  TOOLTIP_STYLE,
-} from "../utils/chartTheme";
+import { money, compactAmount } from "../utils/incomeFormulas";
+import { kindMeta } from "../constants/transactionKinds";
+import { CHART_ACCENT, CHART_AXIS, TOOLTIP_STYLE } from "../utils/chartTheme";
 import {
   computeFinancialHealth,
   getHealthLabel,
@@ -37,7 +40,7 @@ import {
 
 const containerVariants = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.06 } },
+  show: { transition: { staggerChildren: 0.05 } },
 };
 
 const itemVariants = {
@@ -45,29 +48,104 @@ const itemVariants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
 
+const getGreeting = () => {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  if (hour < 21) return "Good evening";
+
+  return "Good night";
+};
+
+const formatDay = (value) =>
+  new Date(value).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+  });
+
+// A shared shell so every panel on the page has the same edge, padding and
+// heading treatment instead of each one restating them.
+function Panel({ title, action, children, className = "" }) {
+  return (
+    <section
+      className={`rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6 ${className}`}
+    >
+      {(title || action) && (
+        <header className="mb-4 flex items-center justify-between gap-3">
+          {title && (
+            <h3 className="text-base sm:text-lg font-semibold">{title}</h3>
+          )}
+
+          {action}
+        </header>
+      )}
+
+      {children}
+    </section>
+  );
+}
+
+function PanelLink({ to, children }) {
+  return (
+    <Link
+      to={to}
+      className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-300 transition hover:bg-white/5"
+    >
+      {children}
+      <FiArrowRight />
+    </Link>
+  );
+}
+
+// A labelled bar. Anything over its limit is drawn clipped at full width and
+// recoloured, so "over budget" reads as a state rather than as a bar that
+// silently stopped growing.
+function Meter({ value, limit, tone = "bg-indigo-400" }) {
+  const percent = limit > 0 ? Math.round((value / limit) * 100) : 0;
+
+  const over = percent > 100;
+
+  return (
+    <div className="mt-2">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${
+            over ? "bg-red-400" : tone
+          }`}
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
+      </div>
+
+      {limit > 0 && (
+        <p
+          className={`mt-1 text-xs ${over ? "text-red-300" : "text-slate-500"}`}
+        >
+          {percent}% of {money(limit)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
-  const [pots, setPots] = useState([]);
-
-  const [dashboardData, setDashboardData] = useState(null);
-
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadDashboard = async () => {
+    const load = async () => {
       try {
         const userId = getUserId();
 
-        if (!userId) {
-          if (!cancelled) setLoading(false);
-          return;
-        }
+        if (!userId) return;
 
-        const data = await getDashboardData(userId);
+        const overview = await getDashboardOverview(userId);
 
-        if (!cancelled) setDashboardData(data);
+        if (!cancelled) setData(overview);
       } catch (error) {
         console.error("Dashboard Error:", error);
       } finally {
@@ -75,402 +153,293 @@ export default function Dashboard() {
       }
     };
 
-    loadDashboard();
+    load();
 
     return () => {
       cancelled = true;
-    };
-  }, []);
-
-  // Pots come from their own endpoint rather than the dashboard aggregate,
-  // so a slow pot query never holds up the headline figures.
-  useEffect(() => {
-    let cancelled = false;
-
-    const timer = window.setTimeout(async () => {
-      try {
-        const userId = getUserId();
-
-        if (!userId) return;
-
-        const response = await getPotOverview(userId);
-
-        if (!cancelled) setPots(response.data?.pots || []);
-      } catch (error) {
-        console.error("Pot fetch error:", error);
-      }
-    }, 0);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
     };
   }, []);
 
   if (loading) {
     return (
       <DashboardLayout>
-        <Skeleton className="h-56 rounded-3xl" />
+        <Skeleton className="h-48 rounded-3xl" />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mt-8">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <Skeleton key={index} className="h-28 rounded-2xl" />
+        <div className="mt-6 grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-5">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-24 rounded-2xl" />
           ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-8">
-          <Skeleton className="lg:col-span-2 h-72 rounded-2xl" />
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <Skeleton className="h-72 rounded-2xl lg:col-span-2" />
           <Skeleton className="h-72 rounded-2xl" />
         </div>
       </DashboardLayout>
     );
   }
 
-  const totalBudget = dashboardData?.totalBudget || 0;
+  const {
+    accounts = [],
+    pots = [],
+    portfolio,
+    netWorth = 0,
+    totalAssets = 0,
+    totalDebt = 0,
+    month = {},
+    recent = [],
+    spendByDay = [],
+    spendByCategory = [],
+    budgetCategories = [],
+    todaySpent = 0,
+    weekSpent = 0,
+    dailyLimit = 0,
+    weeklyLimit = 0,
+    totalBudget = 0,
+    remainingBudget = 0,
+    budgetUsed = 0,
+    savingsRate = 0,
+    ledgerReady = true,
+  } = data || {};
 
-  const totalExpenses = dashboardData?.totalExpenses || 0;
-
-  const remainingBudget = dashboardData?.remainingBudget || 0;
-
-  const dailyLimit = dashboardData?.dailyLimit || 0;
-
-  const weeklyLimit = dashboardData?.weeklyLimit || 0;
-
-  const rawGoal = dashboardData?.goal;
-
-  const hasGoal = Boolean(rawGoal && rawGoal.targetAmount);
-
-  const goalPercentage = hasGoal
-    ? Math.min(100, Math.round((rawGoal.savedAmount / rawGoal.targetAmount) * 100))
-    : 0;
-
-  const incomes = dashboardData?.incomes || [];
-
-  const totalIncome = incomes.reduce(
-    (sum, item) => sum + Number(item.amount),
-    0,
-  );
-
-  const expenses = dashboardData?.expenses || [];
-
-  const totalSpent = expenses.reduce(
-    (sum, item) => sum + Number(item.amount),
-    0,
-  );
-
-  const totalSaved = totalIncome - totalSpent;
-
-  const accounts = dashboardData?.accounts || [];
-
-  const totalAssets = dashboardData?.totalAssets || 0;
-
-  const netWorth = accounts.reduce(
-    (sum, account) => sum + Number(account.balance || 0),
-    0,
-  );
-
-  // Real pots, loaded below. This was a hardcoded array of three invented
-  // funds, which meant the dashboard showed savings that did not exist.
-  const savingsPots = (pots || []).map((pot) => ({
-    id: pot._id,
-    name: pot.itemName,
-    current: pot.savedAmount,
-    target: pot.targetAmount,
-    icon: pot.potIcon,
-    percent: pot.progressPercentage,
-    status: pot.status,
-    isMirrored: pot.isMirrored,
-  }));
-
-  const allocations = [
-    { name: "Food", amount: 10000 },
-    { name: "Investment", amount: 7000 },
-    { name: "Needs", amount: 7000 },
-    { name: "Travel", amount: 3500 },
-    { name: "Entertainment", amount: 3500 },
-  ];
-
-  const savingsRate = dashboardData?.savingsRate || 0;
-
-  const budgetUsed =
-    totalBudget > 0 ? Math.round((totalExpenses / totalBudget) * 100) : 0;
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-
-    if (hour < 12) {
-      return "Good Morning 🌅";
-    }
-
-    if (hour < 17) {
-      return "Good Afternoon ☀️";
-    }
-
-    if (hour < 21) {
-      return "Good Evening 🌇";
-    }
-
-    return "Good Night 🌙";
-  };
-
-  const today = new Date().toISOString().split("T")[0];
-
-  const todaySpent = expenses
-    .filter((expense) => expense.expenseDate?.split("T")[0] === today)
-    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-
-  const dailyUsage =
-    dailyLimit > 0 ? Math.round((todaySpent / dailyLimit) * 100) : 0;
-
-  const currentDate = new Date();
-
-  const firstDayOfWeek = new Date(currentDate);
-
-  firstDayOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
-
-  const weekSpent = expenses
-    .filter((expense) => new Date(expense.expenseDate) >= firstDayOfWeek)
-    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-
-  const weeklyUsage =
-    weeklyLimit > 0 ? Math.round((weekSpent / weeklyLimit) * 100) : 0;
-
-  const health = computeFinancialHealth(dashboardData);
+  const health = computeFinancialHealth(data || {});
   const healthLabel = getHealthLabel(health.score, health.hasData);
   const healthTone = getHealthTone(health.score, health.hasData);
 
-  // Real top-spending category, derived from this page's already-fetched
-  // expenses — replaces the old unconditional "Food category..." mock line.
-  const categoryTotals = expenses.reduce((acc, expense) => {
-    const key = expense.category || "Other";
-    acc[key] = (acc[key] || 0) + Number(expense.amount || 0);
-    return acc;
-  }, {});
+  const cards = accounts.filter((account) => account.type === "Credit Card");
 
-  const topCategoryEntry = Object.entries(categoryTotals).sort(
-    (a, b) => b[1] - a[1],
-  )[0];
+  const hasAnything = accounts.length > 0 || month.count > 0;
 
-  // Real monthly spending trend, built from expenses already fetched for
-  // this page (no new API call) — replaces the static emoji placeholder.
-  const monthlySpendChartData = (() => {
-    const now = new Date();
+  const topCategories = spendByCategory.slice(0, 5);
 
-    const dailyTotals = {};
+  const maxCategory = topCategories[0]?.amount || 0;
 
-    expenses.forEach((expense) => {
-      const date = new Date(expense.expenseDate);
-
-      if (
-        date.getMonth() === now.getMonth() &&
-        date.getFullYear() === now.getFullYear()
-      ) {
-        const day = date.getDate();
-        dailyTotals[day] = (dailyTotals[day] || 0) + Number(expense.amount || 0);
-      }
-    });
-
-    return Object.keys(dailyTotals)
-      .map(Number)
-      .sort((a, b) => a - b)
-      .map((day) => ({ day: String(day), amount: dailyTotals[day] }));
-  })();
-
-  const statCards = [
-    {
-      key: "budget",
-      title: "Total Budget",
-      icon: "🎯",
-      value: totalBudget,
-      valueColor: "text-emerald-400",
-    },
+  const stats = [
     {
       key: "today",
-      title: "Today's Spending",
-      icon: "📅",
+      label: "Spent today",
       value: todaySpent,
-      valueColor: "text-orange-400",
-      subLabel: `Limit ₹${dailyLimit.toLocaleString()}`,
-      progress: dailyUsage,
-      progressColor: dailyUsage > 100 ? "bg-red-500" : "bg-orange-500",
+      limit: dailyLimit,
+      tone: "bg-orange-400",
+      valueClass: "text-orange-300",
     },
     {
       key: "week",
-      title: "Weekly Spending",
-      icon: "🗓️",
+      label: "Spent this week",
       value: weekSpent,
-      valueColor: "text-cyan-400",
-      subLabel: `Limit ₹${weeklyLimit.toLocaleString()}`,
-      progress: weeklyUsage,
-      progressColor: weeklyUsage > 100 ? "bg-red-500" : "bg-cyan-500",
-    },
-    {
-      key: "income",
-      title: "Monthly Income",
-      icon: "💰",
-      value: totalIncome,
-      valueColor: "text-green-400",
-    },
-    {
-      key: "expense",
-      title: "Monthly Expense",
-      icon: "📉",
-      value: totalExpenses,
-      valueColor: "text-red-400",
-    },
-    {
-      key: "savingsRate",
-      title: "Savings Rate",
-      icon: "📈",
-      value: `${savingsRate}%`,
-      valueColor: "text-yellow-400",
-      isText: true,
+      limit: weeklyLimit,
+      tone: "bg-cyan-400",
+      valueClass: "text-cyan-300",
     },
     {
       key: "remaining",
-      title: "Remaining Budget",
-      icon: "💼",
+      label: "Budget left",
       value: remainingBudget,
-      valueColor: "text-purple-400",
+      valueClass:
+        remainingBudget < 0 ? "text-red-300" : "text-emerald-300",
+      hint:
+        totalBudget > 0
+          ? `${budgetUsed}% of ${money(totalBudget)} used`
+          : "No budget set",
     },
     {
-      key: "networth",
-      title: "Net Worth",
-      icon: "🏦",
-      value: netWorth,
-      valueColor: "text-emerald-400",
+      key: "savings",
+      label: "Savings rate",
+      value: `${savingsRate}%`,
+      isText: true,
+      valueClass: savingsRate >= 20 ? "text-emerald-300" : "text-amber-300",
+      hint: "Of money in, this month",
     },
   ];
 
   return (
     <DashboardLayout>
-      <motion.div
+      {/* ---------------------------------------------------------------
+          Hero - net worth, and what this month has actually done to it.
+          --------------------------------------------------------------- */}
+      <motion.section
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative mb-6 overflow-hidden rounded-3xl border border-white/10 bg-slate-900 p-8"
+        className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-900 p-5 sm:p-8"
       >
-        {/* Arbitrary values bypass the theme, so this one carries the gold
-            accent literally. Kept faint - it is a wash, not a fill. */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(207,175,102,0.10),transparent_55%)]" />
 
-        <div className="relative z-10 flex flex-col lg:flex-row justify-between gap-6">
-          <div>
-            <p className="text-slate-400">{getGreeting()}</p>
+        <div className="relative z-10">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-slate-400 text-sm">
+                {getGreeting()}
+                {currentUser?.name ? `, ${currentUser.name}` : ""}
+              </p>
 
-            <h1 className="mt-2 text-5xl">
-              Hey {currentUser?.name?.split(" ")[0]} 👋
-            </h1>
+              <p className="mt-1 text-slate-500 text-xs">
+                {new Date().toLocaleDateString("en-IN", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                })}
+              </p>
 
-            <p className="text-slate-400 mt-3">Track. Plan. Grow.</p>
+              <span
+                className={`mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${healthTone.bg} ${healthTone.border} ${healthTone.text}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${healthTone.dot}`} />
+                {healthLabel}
+                {health.hasData && ` · ${health.score}/100`}
+              </span>
+            </div>
 
-            <div
-              className={`inline-flex items-center gap-2 mt-4 px-3 py-1.5 rounded-xl border text-sm ${healthTone.bg} ${healthTone.border} ${healthTone.text}`}
-            >
-              <span className={`w-2 h-2 rounded-full ${healthTone.dot}`} />
-              Financial Health: {healthLabel}
-              {health.hasData && ` · ${health.score}/100`}
+            <div className="min-w-0 sm:text-right">
+              <p className="text-slate-400 text-sm">Net worth</p>
+
+              <h2 className="mt-1 text-3xl sm:text-4xl font-bold tabular-nums text-emerald-300">
+                {money(netWorth)}
+              </h2>
+
+              <p className="mt-2 text-xs text-slate-500">
+                {money(totalAssets)} in assets
+                {totalDebt > 0 && ` · ${money(totalDebt)} owed`}
+              </p>
             </div>
           </div>
 
-          <div className="text-right">
-            <p className="text-slate-400">Net Worth</p>
+          {/* This month, straight off the unified ledger. */}
+          <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
+              <p className="flex items-center gap-1.5 text-xs text-slate-400">
+                <FiArrowDownLeft className="text-emerald-300" />
+                Money in
+              </p>
 
-            <h2 className="text-5xl font-bold text-emerald-400">
-              ₹{netWorth.toLocaleString()}
-            </h2>
+              <p className="mt-1 text-lg sm:text-2xl font-bold tabular-nums text-emerald-300">
+                {money(month.inflow || 0)}
+              </p>
+            </div>
 
-            <p className="text-sm text-slate-400 mt-2">
-              Savings Rate {savingsRate}%
-            </p>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
+              <p className="flex items-center gap-1.5 text-xs text-slate-400">
+                <FiArrowUpRight className="text-red-300" />
+                Money out
+              </p>
+
+              <p className="mt-1 text-lg sm:text-2xl font-bold tabular-nums text-red-300">
+                {money(month.outflow || 0)}
+              </p>
+            </div>
+
+            <div className="col-span-2 sm:col-span-1 rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
+              <p className="text-xs text-slate-400">Spent this month</p>
+
+              <p className="mt-1 text-lg sm:text-2xl font-bold tabular-nums">
+                {money(month.spending || 0)}
+              </p>
+
+              {totalBudget > 0 && (
+                <Meter value={month.spending || 0} limit={totalBudget} />
+              )}
+            </div>
           </div>
-        </div>
-      </motion.div>
 
-      {dailyUsage > 100 && (
-        <div className="mt-6 bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
-          <h3 className="text-red-400 font-semibold">
-            ⚠ Daily Budget Exceeded
-          </h3>
+          {/* Money out counts everything that left an account; spending is
+              only what was actually spent. Saying so prevents the two
+              figures above reading as a contradiction. */}
+          {(month.outflow || 0) > (month.spending || 0) && (
+            <p className="mt-3 text-xs text-slate-500">
+              {money((month.outflow || 0) - (month.spending || 0))} of money out
+              was moved rather than spent — transfers, pots and lending.
+            </p>
+          )}
 
-          <p className="text-slate-300 mt-2">
-            You have spent ₹{todaySpent.toLocaleString() + " "}
-            today against your limit of ₹{dailyLimit.toLocaleString()}.
-          </p>
+          {!ledgerReady && (
+            <p className="mt-3 text-xs text-amber-300">
+              Activity could not be loaded, so this month may be incomplete.
+            </p>
+          )}
         </div>
+      </motion.section>
+
+      {!hasAnything && (
+        <Panel className="mt-6">
+          <EmptyState
+            icon={FiTarget}
+            title="Nothing tracked yet"
+            message="Add an account, then record income or an expense — every figure on this page fills in from there."
+            className="border-none bg-transparent py-6"
+          />
+
+          <div className="flex flex-wrap justify-center gap-2">
+            <Link
+              to="/accounts"
+              className="rounded-xl bg-indigo-400 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              Add an account
+            </Link>
+
+            <Link
+              to="/budget"
+              className="rounded-xl bg-white/10 px-4 py-2 text-sm"
+            >
+              Set a budget
+            </Link>
+          </div>
+        </Panel>
       )}
 
-      {weeklyUsage > 100 && (
-        <div className="mt-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl p-5 mb-6">
-          <h3 className="text-orange-400 font-semibold">
-            ⚠ Weekly Budget Exceeded
-          </h3>
-
-          <p className="text-slate-300 mt-2">
-            You have spent ₹{weekSpent.toLocaleString() + " "}
-            this week against your limit of ₹{weeklyLimit.toLocaleString()}.
-          </p>
-        </div>
-      )}
-
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-colors">
-        <p className="text-slate-400 text-sm">Total Assets</p>
-
-        <h3 className="text-3xl font-bold mt-2 text-emerald-400">
-          ₹{totalAssets.toLocaleString()}
-        </h3>
-      </div>
-
-      {/* Summary Cards */}
-
+      {/* --------------------------------------------------------------- */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mt-8"
+        className="mt-6 grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-5"
       >
-        {statCards.map((card) => (
+        {stats.map((stat) => (
           <motion.div
-            key={card.key}
+            key={stat.key}
             variants={itemVariants}
-            className="bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-colors"
+            className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-5"
           >
-            <div className="flex items-center justify-between">
-              <p className="text-slate-400 text-sm">{card.title}</p>
-              <span className="text-xl" aria-hidden="true">
-                {card.icon}
-              </span>
-            </div>
+            <p className="truncate text-xs sm:text-sm text-slate-400">
+              {stat.label}
+            </p>
 
-            <h3 className={`text-3xl font-bold mt-2 ${card.valueColor}`}>
-              {card.isText ? card.value : `₹${Number(card.value).toLocaleString()}`}
-            </h3>
+            <p
+              className={`mt-1 truncate text-xl sm:text-2xl font-bold tabular-nums ${stat.valueClass}`}
+            >
+              {stat.isText ? stat.value : money(stat.value)}
+            </p>
 
-            {card.subLabel && (
-              <p className="text-xs text-slate-400 mt-2">{card.subLabel}</p>
-            )}
-
-            {card.progress !== undefined && (
-              <div className="w-full bg-slate-700 rounded-full h-2 mt-3">
-                <div
-                  className={`h-2 rounded-full ${card.progressColor}`}
-                  style={{ width: `${Math.min(card.progress, 100)}%` }}
-                />
-              </div>
+            {stat.limit > 0 ? (
+              <Meter value={stat.value} limit={stat.limit} tone={stat.tone} />
+            ) : (
+              stat.hint && (
+                <p className="mt-1 truncate text-xs text-slate-500">
+                  {stat.hint}
+                </p>
+              )
             )}
           </motion.div>
         ))}
       </motion.div>
 
-      <div className="mt-8">
-        <h3 className="text-2xl font-semibold mb-5">My Accounts</h3>
+      {/* ---------------------------------------------------------------
+          Accounts and cards.
+          --------------------------------------------------------------- */}
+      {accounts.length > 0 && (
+        <div className="mt-8">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-base sm:text-lg font-semibold">
+              Accounts &amp; cards
+            </h3>
 
-        {accounts.length ? (
+            <PanelLink to="/accounts">Manage</PanelLink>
+          </div>
+
           <motion.div
             variants={containerVariants}
             initial="hidden"
             animate="show"
-            className="grid md:grid-cols-2 xl:grid-cols-4 gap-5"
+            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-5"
           >
             {accounts.map((account) => (
               <motion.div key={account._id} variants={itemVariants}>
@@ -478,287 +447,366 @@ export default function Dashboard() {
               </motion.div>
             ))}
           </motion.div>
-        ) : (
-          <EmptyState
-            icon={FiBriefcase}
-            title="No accounts yet"
-            message="Add an account to start tracking balances here."
-          />
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6 mt-8">
-        <h3 className="text-xl font-semibold mb-5">Savings Pots</h3>
-
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-          className="space-y-4"
+      {/* ---------------------------------------------------------------
+          Activity - every kind of movement, not just Expense rows.
+          --------------------------------------------------------------- */}
+      <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <Panel
+          className="lg:col-span-2"
+          title="Recent activity"
+          action={<PanelLink to="/expenses">See all</PanelLink>}
         >
-          {savingsPots.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              No pots yet.{" "}
-              <Link to="/pots" className="text-indigo-300 underline">
-                Create one
-              </Link>{" "}
-              to start setting money aside.
-            </p>
+          {recent.length === 0 ? (
+            <EmptyState
+              icon={FiInbox}
+              title="Nothing this month"
+              message="Expenses, income, transfers, pot funding and lending all show up here."
+              className="border-none bg-transparent py-6"
+            />
           ) : (
-            savingsPots.map((pot) => (
-              <motion.div key={pot.id} variants={itemVariants}>
-                <div className="flex flex-wrap justify-between gap-2">
-                  <span className="truncate">
-                    {pot.icon} {pot.name}
-                    {pot.isMirrored && (
-                      <span className="ml-2 text-xs text-cyan-300">linked</span>
-                    )}
-                  </span>
-                  <span className="text-slate-300">
-                    ₹{Number(pot.current).toLocaleString()} / ₹
-                    {Number(pot.target).toLocaleString()}
-                  </span>
-                </div>
+            <ul className="divide-y divide-white/5">
+              {recent.map((row) => {
+                const meta = kindMeta(row.kind);
 
-                <div className="mt-2 h-1.5 w-full rounded-full bg-white/5">
-                  <div
-                    className="h-1.5 rounded-full bg-emerald-400"
-                    style={{ width: `${Math.min(pot.percent, 100)}%` }}
-                  />
-                </div>
-              </motion.div>
-            ))
-          )}
-        </motion.div>
-      </div>
+                const incoming = row.amount > 0;
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
-        <h3 className="text-xl font-semibold mb-5">Monthly Allocation</h3>
-
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-          className="space-y-3"
-        >
-          {allocations.map((item) => (
-            <motion.div
-              key={item.name}
-              variants={itemVariants}
-              className="flex justify-between"
-            >
-              <span>{item.name}</span>
-              <span>₹{item.amount.toLocaleString()}</span>
-            </motion.div>
-          ))}
-        </motion.div>
-      </div>
-
-      {/* Analytics Section */}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-8">
-        <div className="lg:col-span-2 bg-white/5 border border-white/10 rounded-2xl p-6">
-          <h3 className="text-xl font-semibold mb-4">
-            Monthly Spending Analysis
-          </h3>
-
-          {monthlySpendChartData.length ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={monthlySpendChartData}>
-                <defs>
-                  <linearGradient
-                    id="dashboardSpendGradient"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
+                return (
+                  <li
+                    key={`${row.kind}-${row.id}`}
+                    className="flex items-center justify-between gap-3 py-2.5"
                   >
-                    <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.9} />
-                    <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0.4} />
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className={`grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/5 ${meta.tone}`}
+                      >
+                        {incoming ? <FiArrowDownLeft /> : <FiArrowUpRight />}
+                      </span>
+
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm">
+                          {row.label}
+                        </span>
+
+                        <span className="block truncate text-xs text-slate-500">
+                          {meta.label} · {row.accountName} ·{" "}
+                          {formatDay(row.date)}
+                        </span>
+                      </span>
+                    </span>
+
+                    <span
+                      className={`shrink-0 text-sm font-semibold tabular-nums ${
+                        incoming ? "text-emerald-300" : "text-slate-200"
+                      }`}
+                    >
+                      {incoming ? "+" : "−"}
+                      {money(Math.abs(row.amount))}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
+
+        <Panel
+          title="Where it went"
+          action={<PanelLink to="/analytics">Analytics</PanelLink>}
+        >
+          {topCategories.length === 0 ? (
+            <EmptyState
+              icon={FiPieChart}
+              title="No spending yet"
+              message="Categories appear once you record an expense."
+              className="border-none bg-transparent py-6"
+            />
+          ) : (
+            <ul className="space-y-3">
+              {topCategories.map((category) => (
+                <li key={category.name}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm">{category.name}</span>
+
+                    <span className="shrink-0 text-sm tabular-nums text-slate-300">
+                      {money(category.amount)}
+                    </span>
+                  </div>
+
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-indigo-400"
+                      style={{
+                        width: `${
+                          maxCategory > 0
+                            ? Math.round((category.amount / maxCategory) * 100)
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
+
+      {/* ---------------------------------------------------------------
+          Trend and plan.
+          --------------------------------------------------------------- */}
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <Panel className="lg:col-span-2" title="Spending this month">
+          {spendByDay.some((point) => point.amount > 0) ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={spendByDay}>
+                <defs>
+                  <linearGradient id="spendBar" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="0%"
+                      stopColor={CHART_ACCENT}
+                      stopOpacity={0.9}
+                    />
+                    <stop
+                      offset="100%"
+                      stopColor={CHART_ACCENT}
+                      stopOpacity={0.35}
+                    />
                   </linearGradient>
                 </defs>
 
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="rgba(255,255,255,0.06)"
+                  vertical={false}
+                />
 
                 <XAxis
                   dataKey="day"
                   stroke={CHART_AXIS}
-                  fontSize={12}
+                  fontSize={11}
                   tickLine={false}
+                  axisLine={false}
+                  interval="preserveStartEnd"
+                  minTickGap={12}
                 />
 
-                <YAxis stroke={CHART_AXIS} fontSize={12} tickLine={false} />
+                <YAxis
+                  stroke={CHART_AXIS}
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  width={44}
+                  tickFormatter={(value) => compactAmount(value)}
+                />
 
                 <Tooltip
+                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
                   contentStyle={TOOLTIP_STYLE}
-                  formatter={(value) => [
-                    `₹${Number(value).toLocaleString()}`,
-                    "Spent",
-                  ]}
+                  formatter={(value) => [money(value), "Spent"]}
                   labelFormatter={(label) => `Day ${label}`}
                 />
 
                 <Bar
                   dataKey="amount"
-                  fill="url(#dashboardSpendGradient)"
+                  fill="url(#spendBar)"
                   radius={[6, 6, 0, 0]}
+                  maxBarSize={28}
                 />
               </BarChart>
             </ResponsiveContainer>
           ) : (
             <EmptyState
-              icon={FiBarChart2}
-              title="No spending data yet"
-              message="Add expenses this month to see your spending trend here."
-              className="h-72 justify-center border-none bg-transparent"
+              icon={FiTrendingUp}
+              title="No spending this month"
+              message="Daily spending will chart here as you record it."
+              className="border-none bg-transparent py-6"
             />
           )}
-        </div>
+        </Panel>
 
-        <div className="space-y-5">
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-            <h3 className="text-xl font-semibold mb-4">Budget Progress</h3>
+        <Panel
+          title="Budget allocation"
+          action={<PanelLink to="/budget">Edit</PanelLink>}
+        >
+          {budgetCategories.length === 0 ? (
+            <EmptyState
+              icon={FiTarget}
+              title="No budget yet"
+              message="Set category limits to track them against real spending."
+              className="border-none bg-transparent py-6"
+            />
+          ) : (
+            <ul className="space-y-3">
+              {budgetCategories.map((category) => (
+                <li key={category.name}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm">{category.name}</span>
 
-            <div className="flex justify-between mb-3">
-              <span>Used</span>
-
-              <span>{budgetUsed}%</span>
-            </div>
-
-            <div className="w-full bg-slate-700 rounded-full h-3">
-              <div
-                className="h-3 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500"
-                style={{
-                  width: `${Math.min(budgetUsed, 100)}%`,
-                }}
-              />
-            </div>
-
-            <p className="text-sm text-slate-400 mt-3">
-              ₹{totalExpenses.toLocaleString()} spent out of ₹
-              {totalBudget.toLocaleString()}
-            </p>
-          </div>
-
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-            <h3 className="text-xl font-semibold mb-4">Goal Progress</h3>
-
-            {hasGoal ? (
-              <>
-                <p className="text-slate-400">{rawGoal.name}</p>
-
-                <div className="w-full h-3 bg-slate-700 rounded-full mt-3">
-                  <div
-                    className="h-3 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500"
-                    style={{
-                      width: `${goalPercentage}%`,
-                    }}
-                  />
-                </div>
-
-                <div className="flex justify-between mt-3 text-sm">
-                  <span className="text-indigo-400">
-                    ₹{Number(rawGoal.savedAmount).toLocaleString()} Saved
-                  </span>
-
-                  <span className="text-slate-400">
-                    ₹{Number(rawGoal.targetAmount).toLocaleString()} Goal
-                  </span>
-                </div>
-              </>
-            ) : (
-              <EmptyState
-                icon={FiTarget}
-                title="No goal set"
-                message="Coming soon — set a savings goal to track progress here."
-                className="py-6 border-none bg-transparent"
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Widgets */}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-8">
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:border-white/20 transition-colors">
-          <h3 className="text-xl font-semibold mb-5">Recent Transactions</h3>
-
-          <div className="space-y-4">
-            {expenses.length ? (
-              expenses
-                .slice(0, 5)
-                .map((expense) => (
-                  <div key={expense._id} className="flex justify-between">
-                    <div>
-                      <p>{expense.category}</p>
-                      <p className="text-xs text-slate-500">
-                        {new Date(expense.expenseDate).toLocaleDateString()}
-                      </p>
-                    </div>
-
-                    <span className="text-red-400">-₹{expense.amount}</span>
+                    <span
+                      className={`shrink-0 text-xs tabular-nums ${
+                        category.percent > 100
+                          ? "text-red-300"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {money(category.spent)} / {money(category.limit)}
+                    </span>
                   </div>
-                ))
-            ) : (
-              <EmptyState
-                icon={FiInbox}
-                title="No transactions yet"
-                message="Your recent transactions will show up here."
-                className="py-6 border-none bg-transparent"
-              />
-            )}
-          </div>
-        </div>
 
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:border-white/20 transition-colors">
-          <h3 className="text-xl font-semibold mb-5">Investment Snapshot</h3>
-
-          <EmptyState
-            icon={FiBriefcase}
-            title="Coming soon"
-            message="Investment tracking isn't connected yet — this section will show your real portfolio once it is."
-            className="py-6 border-none bg-transparent"
-          />
-        </div>
-
-        <div className="bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-500/20 rounded-2xl p-6">
-          <h3 className="text-xl font-semibold">🤖 AI Financial Coach</h3>
-
-          <div className="space-y-3 mt-3">
-            <p>
-              💡 You saved ₹{totalSaved.toLocaleString()}
-              this month.
-            </p>
-
-            <p>📊 Your savings rate is {savingsRate}%.</p>
-
-            {topCategoryEntry ? (
-              <p>
-                ⚠ {topCategoryEntry[0]} accounts for most of your spending (₹
-                {topCategoryEntry[1].toLocaleString()}).
-              </p>
-            ) : (
-              <p>⚠ Add some expenses to see your top spending category.</p>
-            )}
-
-            {hasGoal && (
-              <p>
-                🎯 You're
-                {goalPercentage}% towards your goal.
-              </p>
-            )}
-          </div>
-
-          <div className="mt-4 text-sm space-y-2">
-            <p>📅 Today Spent: ₹{todaySpent.toLocaleString()}</p>
-
-            <p>📊 This Week: ₹{weekSpent.toLocaleString()}</p>
-
-            <p>💰 Remaining: ₹{remainingBudget.toLocaleString()}</p>
-          </div>
-        </div>
+                  <Meter value={category.spent} limit={category.limit} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
       </div>
+
+      {/* ---------------------------------------------------------------
+          Pots and portfolio.
+          --------------------------------------------------------------- */}
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Panel
+          title="Savings pots"
+          action={<PanelLink to="/pots">Open</PanelLink>}
+        >
+          {pots.length === 0 ? (
+            <EmptyState
+              icon={FiTarget}
+              title="No pots yet"
+              message="Set money aside for something specific and track it here."
+              className="border-none bg-transparent py-6"
+            />
+          ) : (
+            <ul className="space-y-3">
+              {pots.slice(0, 5).map((pot) => (
+                <li key={pot._id}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm">
+                      {pot.potIcon} {pot.itemName}
+                      {pot.isMirrored && (
+                        <span className="ml-2 text-xs text-cyan-300">
+                          linked
+                        </span>
+                      )}
+                    </span>
+
+                    <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                      {money(pot.savedAmount)} / {money(pot.targetAmount)}
+                    </span>
+                  </div>
+
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-emerald-400"
+                      style={{
+                        width: `${Math.min(pot.progressPercentage || 0, 100)}%`,
+                      }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+
+        <Panel
+          title="Portfolio"
+          action={<PanelLink to="/investments">Open</PanelLink>}
+        >
+          {!portfolio?.totals?.holdings ? (
+            <EmptyState
+              icon={FiBriefcase}
+              title="No holdings yet"
+              message="Record an investment to see its value and return here."
+              className="border-none bg-transparent py-6"
+            />
+          ) : (
+            <div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Current value</p>
+
+                  <p className="mt-1 truncate text-lg font-bold tabular-nums">
+                    {money(portfolio.totals.current)}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Gain</p>
+
+                  <p
+                    className={`mt-1 truncate text-lg font-bold tabular-nums ${
+                      portfolio.totals.gain >= 0
+                        ? "text-emerald-300"
+                        : "text-red-300"
+                    }`}
+                  >
+                    {portfolio.totals.gain >= 0 ? "+" : "−"}
+                    {money(Math.abs(portfolio.totals.gain))}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-3 text-xs text-slate-500">
+                {portfolio.totals.holdings} holding
+                {portfolio.totals.holdings === 1 ? "" : "s"} ·{" "}
+                {money(portfolio.totals.invested)} invested ·{" "}
+                {portfolio.totals.gainPercent >= 0 ? "+" : ""}
+                {portfolio.totals.gainPercent.toFixed(1)}%
+              </p>
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {/* Cards need their due dates surfaced, not just their balances. */}
+      {cards.length > 0 && (
+        <Panel
+          className="mt-6"
+          title="Cards"
+          action={<PanelLink to="/cards">Open</PanelLink>}
+        >
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {cards.map((card) => {
+              const owed = Math.max(-Number(card.balance || 0), 0);
+
+              return (
+                <li
+                  key={card._id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-3"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <FiCreditCard className="shrink-0 text-slate-400" />
+
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm">
+                        {card.name}
+                      </span>
+
+                      <span className="block text-xs text-slate-500">
+                        {card.card?.last4
+                          ? `•••• ${card.card.last4}`
+                          : card.card?.network || "Card"}
+                      </span>
+                    </span>
+                  </span>
+
+                  <span
+                    className={`shrink-0 text-sm font-semibold tabular-nums ${
+                      owed > 0 ? "text-red-300" : "text-emerald-300"
+                    }`}
+                  >
+                    {owed > 0 ? `${money(owed)} owed` : "Clear"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
+      )}
     </DashboardLayout>
   );
 }
