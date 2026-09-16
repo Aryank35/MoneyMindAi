@@ -1,6 +1,16 @@
 import Account from "../models/Account.js";
 import Income from "../models/Income.js";
 import Expense from "../models/Expense.js";
+import Obligation from "../models/Obligation.js";
+import { startOfDay } from "../helpers/dates.js";
+import { buildSpendable, isCashType } from "../helpers/spendable.js";
+import { decorateObligation } from "./obligationController.js";
+import {
+  collectUpcomingSchedules,
+  loadDecoratedSchedules,
+} from "./scheduleController.js";
+import { collectEntries, SPEND_KINDS } from "./statementController.js";
+import Budget from "../models/Budget.js";
 
 const ROLES = {
   isSalaryAccount: "salary account",
@@ -305,6 +315,136 @@ export const reorderAccounts = async (req, res) => {
     });
 
     res.json({ success: true, data: accounts });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// =========================================================================
+// SAFE TO SPEND
+// =========================================================================
+
+// Which accounts feed "money left to spend". Sent as the full selection so a
+// stale page cannot silently re-enable an account the user has just dropped:
+// anything cash-like and not listed is turned off.
+export const setSpendableAccounts = async (req, res) => {
+  try {
+    const { userId, accountIds } = req.body;
+
+    if (!userId || !Array.isArray(accountIds)) {
+      return res.status(400).json({
+        success: false,
+        message: "Send the user id and the account ids that should count",
+      });
+    }
+
+    const owned = await Account.find({ userId }).select("_id type");
+
+    const ownedIds = new Set(owned.map((account) => String(account._id)));
+
+    const foreign = accountIds.filter((id) => !ownedIds.has(String(id)));
+
+    if (foreign.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: "That account does not belong to this user",
+      });
+    }
+
+    const chosen = new Set(accountIds.map(String));
+
+    await Account.bulkWrite(
+      owned
+        .filter((account) => isCashType(account.type))
+        .map((account) => ({
+          updateOne: {
+            filter: { _id: account._id, userId },
+            update: {
+              $set: { includeInSpendable: chosen.has(String(account._id)) },
+            },
+          },
+        })),
+    );
+
+    res.json({ success: true, message: "Spendable accounts updated" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getSpendableSummary = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const today = startOfDay(new Date());
+
+    // The window runs to the end of this month, matching the budget this
+    // figure gets compared against. A bill due next cycle is not a claim on
+    // this cycle's money.
+    const horizon = new Date(
+      today.getFullYear(),
+      today.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const [accounts, obligations, decoratedSchedules, budgets] =
+      await Promise.all([
+        Account.find({ userId }).sort({ displayOrder: 1, createdAt: 1 }),
+        Obligation.find({ userId }),
+        loadDecoratedSchedules(userId, today),
+        Budget.find({ userId }).sort({ createdAt: -1 }).limit(1),
+      ]);
+
+    const upcomingBills = collectUpcomingSchedules(
+      decoratedSchedules.filter((item) => item.isActive),
+      today,
+      horizon,
+    );
+
+    // Spending comes from the ledger itself rather than from the Expense
+    // collection, because a split share is spending too. Deriving it here a
+    // second way is exactly how the Dashboard and the Expenses page ended up
+    // quoting two different "budget left" figures.
+    const entries = (
+      await Promise.all(accounts.map((account) => collectEntries(account)))
+    ).flat();
+
+    const spentThisMonth = entries
+      .filter((entry) => {
+        const date = new Date(entry.date);
+
+        return (
+          SPEND_KINDS.has(entry.kind) && date >= monthStart && date <= horizon
+        );
+      })
+      .reduce((total, entry) => total - entry.amount, 0);
+
+    const totalBudget = Number(budgets[0]?.totalBudget || 0);
+
+    const summary = buildSpendable({
+      accounts,
+      upcomingBills,
+      obligations: obligations.map((item) => decorateObligation(item, today)),
+      budgetRemaining: totalBudget - spentThisMonth,
+      hasBudget: totalBudget > 0,
+      horizon,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        ...summary,
+        totalBudget,
+        spentThisMonth,
+        horizon,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

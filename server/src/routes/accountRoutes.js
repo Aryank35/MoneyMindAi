@@ -30,8 +30,12 @@ router.get("/:id/statement", getAccountStatement);
 
 router.get("/:id/delete-impact", getAccountDeleteImpact);
 
-// Declared before "/:id" so "reorder" is not read as an account id.
+// Declared before "/:id" so these are not read as account ids.
 router.put("/reorder", reorderAccounts);
+
+router.put("/spendable", setSpendableAccounts);
+
+router.get("/spendable/:userId", getSpendableSummary);
 
 router.put("/:id", updateAccount);
 

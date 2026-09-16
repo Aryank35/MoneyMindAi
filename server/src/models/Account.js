@@ -62,6 +62,15 @@ const accountSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Whether this account's balance counts toward "money left to spend".
+    // Null means the user has not chosen, and the answer falls back to the
+    // account type - so existing accounts behave sensibly with no migration,
+    // and an explicit false is distinguishable from never having been set.
+    includeInSpendable: {
+      type: Boolean,
+      default: null,
+    },
+
     // Receives the EPF slice of salary entries. Held separately from the
     // salary account because that money never touches the bank.
     isEpfAccount: {

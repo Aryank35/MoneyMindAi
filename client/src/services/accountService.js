@@ -73,3 +73,19 @@ export const deleteAccount = async (id) => {
 
   return response.data;
 };
+
+// The cash side of "money left to spend": what the selected accounts hold,
+// and what is already promised out of it. The budget side is combined by the
+// caller, which already knows what counts as spending.
+export const getSpendableSummary = async (userId) => {
+  const response = await api.get(`/accounts/spendable/${userId}`);
+
+  return response.data;
+};
+
+// Sent as the whole selection, so dropping an account actually turns it off.
+export const setSpendableAccounts = async (userId, accountIds) => {
+  const response = await api.put("/accounts/spendable", { userId, accountIds });
+
+  return response.data;
+};

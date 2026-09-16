@@ -40,6 +40,7 @@ import EmptyState from "../components/common/EmptyState";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import Modal from "../components/common/Modal";
 import TransactionsPanel from "../components/common/TransactionsPanel";
+import MoneyLeftCard from "../components/common/MoneyLeftCard";
 import QuickExpenseSheet from "../components/common/QuickExpenseSheet";
 import AmountInput from "../components/common/AmountInput";
 import Button from "../components/common/Button";
@@ -653,6 +654,12 @@ export default function Expenses() {
           ))}
         </div>
         </div>
+      </div>
+
+      {/* Above the tabs on purpose: whether there is money to spend is the
+          question that comes before either list. */}
+      <div className="mb-6">
+        <MoneyLeftCard refreshKey={expenses.length} />
       </div>
 
       {view === "transactions" ? (

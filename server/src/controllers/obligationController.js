@@ -8,7 +8,11 @@ import { getDueStatus } from "../helpers/due.js";
 // HELPERS
 // =========================================================================
 
-const decorate = (document, today = new Date()) => {
+// Exported as decorateObligation so "money left to spend" can reserve what is
+// still owed on borrowed money using the very same outstanding figure the
+// Lending page shows.
+export const decorateObligation = (document, today = new Date()) => {
+
   const item = document.toObject ? document.toObject() : document;
 
   const settled = (item.settlements || []).reduce(
@@ -45,6 +49,9 @@ const decorate = (document, today = new Date()) => {
     settlementCount: (item.settlements || []).length,
   };
 };
+
+const decorate = decorateObligation;
+
 
 const validate = (body) => {
   if (!["lent", "borrowed"].includes(body.direction)) {

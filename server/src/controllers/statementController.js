@@ -25,6 +25,9 @@ import {
 
 // Expense.accountId is a String (unlike Income and Transfer, which store
 // ObjectIds), so it is matched on the string form.
+// Exported so anything needing "what actually moved" - the ledger endpoints
+// here, and "money left to spend" - works from one definition rather than
+// each deriving its own slightly different one.
 export const collectEntries = async (account) => {
   const id = account._id;
 
@@ -441,7 +444,9 @@ export const getCardsOverview = async (req, res) => {
 // spending, and folding it into an expense figure would wreck the budget.
 // =========================================================================
 
-const SPEND_KINDS = new Set(["expense", "split"]);
+// Spending means spent, not merely moved. Exported for the same reason as
+// collectEntries: one answer to "what counts against a budget".
+export const SPEND_KINDS = new Set(["expense", "split"]);
 
 export const getUserTransactions = async (req, res) => {
   try {

@@ -26,6 +26,7 @@ import DashboardLayout from "../components/layout/DashboardLayout";
 import AccountCard from "../components/common/AccountCard";
 import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
+import MoneyLeftCard from "../components/common/MoneyLeftCard";
 
 import { getDashboardOverview } from "../services/dashboardService";
 import { getUserId } from "../utils/auth";
@@ -358,6 +359,12 @@ export default function Dashboard() {
           )}
         </div>
       </motion.section>
+
+      {/* The first thing after the hero, because "can I spend?" is the
+          question the rest of the page only answers indirectly. */}
+      <div className="mt-6">
+        <MoneyLeftCard />
+      </div>
 
       {!hasAnything && (
         <Panel className="mt-6">

@@ -383,59 +383,72 @@ export const undoLastPayment = async (req, res) => {
 // OVERVIEW
 // =========================================================================
 
+// Every individual due date in a window, for the active schedules of one
+// user. Exported because "money left to spend" has to reserve exactly the
+// bills the planner is showing - deriving them twice is how the two pages
+// would end up disagreeing about what is due.
+export const collectUpcomingSchedules = (active, today, horizon) => {
+  const upcoming = [];
+
+  for (const item of active) {
+    const dates = occurrencesBetween(
+      item.lastPaidDate ? addDays(item.lastPaidDate, 1) : item.startDate,
+      item.recurrence,
+      today,
+      horizon,
+      item.endDate,
+    );
+
+    for (const date of dates) {
+      upcoming.push({
+        scheduleId: item._id,
+        name: item.name,
+        kind: item.kind,
+        amount: item.amount,
+        category: item.category,
+        accountId: item.accountId,
+        date,
+        isOverdue: false,
+      });
+    }
+
+    // An unpaid past due date is not in the forward window but is the most
+    // important thing to show.
+    if (item.status.state === "overdue") {
+      upcoming.push({
+        scheduleId: item._id,
+        name: item.name,
+        kind: item.kind,
+        amount: item.amount,
+        category: item.category,
+        accountId: item.accountId,
+        date: item.status.nextDate,
+        isOverdue: true,
+      });
+    }
+  }
+
+  return upcoming.sort((a, b) => new Date(a.date) - new Date(b.date));
+};
+
+// Every schedule for a user, decorated. Callers filter to active themselves,
+// because the overview still reports the inactive ones.
+export const loadDecoratedSchedules = async (userId, today) => {
+  const schedules = await Schedule.find({ userId });
+
+  return schedules.map((schedule) => decorate(schedule, today));
+};
+
 export const getScheduleOverview = async (req, res) => {
   try {
-    const schedules = await Schedule.find({ userId: req.params.userId });
-
     const today = startOfDay(new Date());
     const horizon = addDays(today, Number(req.query.days) || 30);
 
-    const decorated = schedules.map((schedule) => decorate(schedule, today));
+    const decorated = await loadDecoratedSchedules(req.params.userId, today);
+
     const active = decorated.filter((item) => item.isActive);
 
-    // Every individual due date in the window, so the user sees "three bills
-    // this fortnight" rather than a list of abstract cadences.
-    const upcoming = [];
-
-    for (const item of active) {
-      const dates = occurrencesBetween(
-        item.lastPaidDate ? addDays(item.lastPaidDate, 1) : item.startDate,
-        item.recurrence,
-        today,
-        horizon,
-        item.endDate,
-      );
-
-      for (const date of dates) {
-        upcoming.push({
-          scheduleId: item._id,
-          name: item.name,
-          kind: item.kind,
-          amount: item.amount,
-          category: item.category,
-          accountId: item.accountId,
-          date,
-          isOverdue: false,
-        });
-      }
-
-      // An unpaid past due date is not in the forward window but is the most
-      // important thing to show.
-      if (item.status.state === "overdue") {
-        upcoming.push({
-          scheduleId: item._id,
-          name: item.name,
-          kind: item.kind,
-          amount: item.amount,
-          category: item.category,
-          accountId: item.accountId,
-          date: item.status.nextDate,
-          isOverdue: true,
-        });
-      }
-    }
-
-    upcoming.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const upcoming = collectUpcomingSchedules(active, today, horizon);
 
     const sumBy = (predicate, field = "amount") =>
       active
