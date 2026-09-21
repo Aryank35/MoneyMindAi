@@ -6,6 +6,7 @@ import {
   getSplitOptions,
   getSplitOverview,
   settleSplit,
+  updateSplit,
   getSplitDeleteImpact,
   deleteSplit,
 } from "../controllers/splitController.js";
@@ -23,6 +24,8 @@ router.post("/", createSplit);
 router.get("/:id/delete-impact", getSplitDeleteImpact);
 
 router.post("/:id/settle", settleSplit);
+
+router.put("/:id", updateSplit);
 
 router.delete("/:id", deleteSplit);
 

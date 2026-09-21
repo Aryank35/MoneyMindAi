@@ -564,3 +564,137 @@ export const getSplitOverview = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// Editing a split reverses everything the bill itself did - the expense for
+// the user's share and the advance for everyone else's - then applies the
+// new figures. Settlements are left alone: that money has already changed
+// hands, so it is not re-applied, only re-checked against the new shares.
+export const updateSplit = async (req, res) => {
+  try {
+    const existing = await Split.findById(req.params.id);
+
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Split not found" });
+    }
+
+    const merged = {
+      ...existing.toObject(),
+      ...req.body,
+      participants: req.body.participants || existing.participants,
+    };
+
+    const error = validate(merged);
+
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    const total = Number(merged.totalAmount);
+
+    const participants = computeShares(
+      total,
+      merged.splitMethod || "equal",
+      merged.participants.map((p) => ({
+        name: p.name.trim(),
+        isMe: Boolean(p.isMe),
+        shareInput: Number(p.shareInput || 0),
+        // Carry forward what each person has already settled, matched by
+        // name, so an edit does not wipe the repayment history.
+        settledAmount: Number(
+          existing.participants.find(
+            (old) => old.name.toLowerCase() === p.name.trim().toLowerCase(),
+          )?.settledAmount || 0,
+        ),
+      })),
+    );
+
+    // A new share cannot be smaller than what that person has already paid,
+    // or the split would owe them money it has no way to represent.
+    const overSettled = participants.find(
+      (p) => Number(p.settledAmount || 0) > Number(p.share || 0),
+    );
+
+    if (overSettled) {
+      return res.status(400).json({
+        success: false,
+        message: `${overSettled.name} has already settled ${overSettled.settledAmount}, which is more than their new share of ${overSettled.share}. Remove the split instead, or raise the amount.`,
+      });
+    }
+
+    const paidByMe = merged.paidByMe !== false;
+    const myShare = Number(participants.find((p) => p.isMe)?.share || 0);
+    const date = merged.date ? new Date(merged.date) : existing.date;
+
+    // ---- reverse what the original bill did ----
+    if (existing.paidByMe && existing.accountId) {
+      const oldMyShare = Number(
+        existing.participants.find((p) => p.isMe)?.share || 0,
+      );
+
+      if (existing.expenseId) {
+        await Expense.findByIdAndDelete(existing.expenseId);
+        await addBalance(existing.accountId, oldMyShare);
+      }
+
+      if (existing.advanceAmount > 0) {
+        await addBalance(existing.accountId, existing.advanceAmount);
+      }
+    }
+
+    // ---- apply the new one ----
+    let expenseId = null;
+    let advanceAmount = 0;
+
+    if (paidByMe) {
+      const accountId = merged.accountId;
+
+      if (!accountId) {
+        return res.status(400).json({
+          success: false,
+          message: "Which account did you pay from?",
+        });
+      }
+
+      if (myShare > 0) {
+        const expense = await Expense.create({
+          userId: existing.userId,
+          accountId: String(accountId),
+          category: merged.category?.trim() || "Shared",
+          amount: myShare,
+          note: `${merged.description.trim()} (my share of a split)`,
+          expenseDate: date,
+        });
+
+        await deductBalance(accountId, myShare);
+
+        expenseId = expense._id;
+      }
+
+      advanceAmount = round2(total - myShare);
+
+      if (advanceAmount > 0) await deductBalance(accountId, advanceAmount);
+    }
+
+    existing.set({
+      description: merged.description.trim(),
+      totalAmount: total,
+      date,
+      category: merged.category?.trim() || "",
+      groupName: merged.groupName?.trim() || "",
+      paidByMe,
+      payerName: paidByMe ? "" : merged.payerName.trim(),
+      accountId: paidByMe ? merged.accountId : null,
+      splitMethod: merged.splitMethod || "equal",
+      participants,
+      expenseId,
+      advanceAmount,
+      note: merged.note?.trim() || "",
+    });
+
+    const saved = await existing.save();
+
+    res.json({ success: true, data: decorate(saved) });
+  } catch (err) {
+    console.error("Split update error:", err);
+
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

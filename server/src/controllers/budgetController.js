@@ -1,8 +1,28 @@
 import Budget from "../models/Budget.js";
+import Account from "../models/Account.js";
+import Obligation from "../models/Obligation.js";
 import {
   sumBudgetableIncome,
   getBudgetableIncomeBreakdown,
 } from "./incomeController.js";
+import { collectEntries, SPEND_KINDS } from "./statementController.js";
+import {
+  collectUpcomingSchedules,
+  loadDecoratedSchedules,
+} from "./scheduleController.js";
+import { decorateObligation } from "./obligationController.js";
+import { buildSpendable } from "../helpers/spendable.js";
+import { startOfDay } from "../helpers/dates.js";
+import {
+  buildBudgetPlan,
+  keyForBudget,
+  monthKeyOf,
+  monthLabelOf,
+  proposeFitToCash,
+} from "../helpers/budgetPlan.js";
+
+const monthKeyFromParts = ({ month, year }) =>
+  `${year}-${String(month).padStart(2, "0")}`;
 
 // Budgets are keyed by a "September 2026" label; income is keyed by numeric
 // month/year. This is the seam between the two.
@@ -93,6 +113,10 @@ export const createBudget = async (req, res) => {
 
       type: category.type || "Expense",
 
+      // Null is meaningful: it means "not chosen", and the plan derives a
+      // starting group from `type` rather than guessing here.
+      group: category.group || null,
+
       icon: category.icon || "📦",
 
       color: category.color || "#6366F1",
@@ -115,6 +139,13 @@ export const createBudget = async (req, res) => {
     const budget = await Budget.create({
       userId,
       month,
+
+      // Stamped so the month can be queried directly. Picking "the newest
+      // budget" was never the same question as "this month's budget".
+      monthKey: monthKeyFromParts(period),
+
+      allocationMode: req.body.allocationMode || "manual",
+      allocationRule: req.body.allocationRule || undefined,
 
       totalBudget: Number(totalBudget),
 
@@ -183,6 +214,10 @@ export const updateBudget = async (req, res) => {
 
       type: category.type || "Expense",
 
+      // Null is meaningful: it means "not chosen", and the plan derives a
+      // starting group from `type` rather than guessing here.
+      group: category.group || null,
+
       icon: category.icon || "📦",
 
       color: category.color || "#6366F1",
@@ -211,6 +246,7 @@ export const updateBudget = async (req, res) => {
       req.params.id,
       {
         ...req.body,
+        monthKey: monthKeyFromParts(period),
         totalBudget: Number(totalBudget),
         estimatedIncome,
         categories: cleanedCategories,
@@ -315,5 +351,107 @@ export const getBudgetDeleteImpact = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+// =========================================================================
+// CURRENT MONTH
+// =========================================================================
+
+// The budget for a given month, not merely the newest one. Budgets carry a
+// monthKey now; older rows do not, so the label is parsed as a fallback and
+// the key backfilled on the way past.
+export const findBudgetForMonth = async (userId, key) => {
+  const direct = await Budget.findOne({ userId, monthKey: key });
+
+  if (direct) return direct;
+
+  const all = await Budget.find({ userId }).sort({ createdAt: -1 });
+
+  const match = all.find((budget) => keyForBudget(budget) === key);
+
+  if (match && !match.monthKey) {
+    match.monthKey = key;
+
+    await match.save();
+  }
+
+  return match || null;
+};
+
+export const getBudgetOverview = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const now = new Date();
+
+    const key = req.query.month || monthKeyOf(now);
+
+    const [year, month] = key.split("-").map(Number);
+
+    const from = new Date(year, month - 1, 1);
+    const to = new Date(year, month, 0, 23, 59, 59, 999);
+
+    const budget = await findBudgetForMonth(userId, key);
+
+    const accounts = await Account.find({ userId });
+
+    // Spending comes from the ledger, so a split share counts and a card
+    // payment does not - settling a card moves money to clear a purchase
+    // that was already counted when it was made.
+    const entries = (
+      await Promise.all(accounts.map((account) => collectEntries(account)))
+    ).flat();
+
+    const spendRows = entries.filter((entry) => {
+      const date = new Date(entry.date);
+
+      return SPEND_KINDS.has(entry.kind) && date >= from && date <= to;
+    });
+
+    // Only this month's plan can be measured against this month's cash.
+    const isCurrentMonth = key === monthKeyOf(now);
+
+    let safeToSpend = null;
+
+    if (isCurrentMonth) {
+      const [obligations, decoratedSchedules] = await Promise.all([
+        Obligation.find({ userId }),
+        loadDecoratedSchedules(userId, startOfDay(now)),
+      ]);
+
+      const cash = buildSpendable({
+        accounts,
+        upcomingBills: collectUpcomingSchedules(
+          decoratedSchedules.filter((item) => item.isActive),
+          startOfDay(now),
+          to,
+        ),
+        obligations: obligations.map((item) => decorateObligation(item, now)),
+        horizon: to,
+      });
+
+      safeToSpend = cash.safeToSpend;
+    }
+
+    const plan = buildBudgetPlan({ budget, spendRows, safeToSpend });
+
+    res.json({
+      success: true,
+      data: {
+        ...plan,
+        monthKey: key,
+        month: budget?.month || monthLabelOf(from),
+        isCurrentMonth,
+        hasBudget: Boolean(budget),
+        budgetId: budget?._id || null,
+        estimatedIncome: budget?.estimatedIncome || 0,
+        dailyLimit: budget?.dailyLimit || 0,
+        weeklyLimit: budget?.weeklyLimit || 0,
+        proposal: proposeFitToCash(plan),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

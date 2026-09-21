@@ -48,3 +48,13 @@ export const deleteBudget = async (id) => {
 
   return response.data;
 };
+// This month's plan measured against what actually happened: per-category
+// spend and overspend, anything spent outside the plan, the need/want/save
+// split, and whether the plan is backed by real cash.
+export const getBudgetOverview = async (userId, monthKey) => {
+  const query = monthKey ? `?month=${monthKey}` : "";
+
+  const response = await api.get(`/budget/overview/${userId}${query}`);
+
+  return response.data;
+};

@@ -26,6 +26,14 @@ export const settleSplit = async (id, body) => {
   return response.data;
 };
 
+// Re-applies the bill from scratch. Settlements already moved money, so
+// they are kept and only re-checked against the new shares.
+export const updateSplit = async (id, data) => {
+  const response = await api.put(`/splits/${id}`, data);
+
+  return response.data;
+};
+
 export const getSplitDeleteImpact = async (id) => {
   const response = await api.get(`/splits/${id}/delete-impact`);
 

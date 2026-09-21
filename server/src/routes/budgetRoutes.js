@@ -7,6 +7,7 @@ import {
   deleteBudget,
   getBudgetPlanning,
   getBudgetDeleteImpact,
+  getBudgetOverview,
 } from "../controllers/budgetController.js";
 
 const budgetRoutes = express.Router();
@@ -23,6 +24,9 @@ budgetRoutes.post("/", createBudget);
 budgetRoutes.get("/user/:userId", getBudgetByUser);
 
 budgetRoutes.get("/planning/:userId", getBudgetPlanning);
+
+// The current month's plan measured against what actually happened.
+budgetRoutes.get("/overview/:userId", getBudgetOverview);
 
 budgetRoutes.get("/:id/delete-impact", getBudgetDeleteImpact);
 

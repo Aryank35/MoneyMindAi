@@ -1,8 +1,6 @@
 import DashboardLayout from "../components/layout/DashboardLayout";
 import {
   FiPlus,
-  FiTarget,
-  FiTrendingUp,
   FiAlertTriangle,
   FiArrowRight,
   FiTrash2,
@@ -18,6 +16,7 @@ import {
   getBudgetByUser,
   createBudget,
   updateBudget,
+  getBudgetOverview,
   deleteBudget,
   getBudgetPlanning,
   getBudgetDeleteImpact,
@@ -32,11 +31,10 @@ import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
 import Modal from "../components/common/Modal";
 import { Skeleton } from "../components/common/Loader";
-import EmptyState from "../components/common/EmptyState";
 import { useToast } from "../components/common/Toast";
-import CategoryProgressBar from "../components/common/CategoryProgressBar";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import { moveItem } from "../utils/reorder";
+import BudgetOverview from "../components/common/BudgetOverview";
 import { useDragReorder } from "../utils/dragReorder";
 import { money } from "../utils/incomeFormulas";
 
@@ -90,12 +88,18 @@ const emptyCategory = () => ({
   limit: "",
   accountId: "",
   type: "Expense",
+  group: null,
 });
 
 export default function Budget() {
   const toast = useToast();
 
   const [budget, setBudget] = useState(null);
+
+  // This month's plan measured against what actually happened. Loaded from
+  // the server so the spending definition matches the rest of the app.
+  const [overview, setOverview] = useState(null);
+  const [applying, setApplying] = useState(false);
   const [expenses, setExpenses] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(() => Boolean(getUserId()));
@@ -277,6 +281,7 @@ export default function Budget() {
                 limit: item.limit || "",
                 accountId: item.accountId || "",
                 type: item.type || "Expense",
+                group: item.group || null,
               }))
             : [emptyCategory()],
       });
@@ -307,6 +312,20 @@ export default function Budget() {
     } finally {
       setLoading(false);
     }
+
+    await loadOverview(userId);
+  }
+
+  // Kept separate from the form data: the analysis is derived server-side and
+  // has to be re-read after every change that could move a figure.
+  async function loadOverview(userId) {
+    try {
+      const response = await getBudgetOverview(userId || getUserId());
+
+      setOverview(response.data);
+    } catch (error) {
+      console.error("Error loading budget overview:", error);
+    }
   }
 
   useEffect(() => {
@@ -335,6 +354,11 @@ export default function Budget() {
       } finally {
         if (!cancelled) setLoading(false);
       }
+
+      // The analysis is loaded here too: this effect - not loadData - is what
+      // runs on mount, so leaving it out meant the overview only ever
+      // appeared after an edit.
+      if (!cancelled) await loadOverview(userId);
     };
 
     loadInitialData();
@@ -363,6 +387,7 @@ export default function Budget() {
               limit: item.limit || "",
               accountId: item.accountId || "",
               type: item.type || "Expense",
+              group: item.group || null,
             }))
           : [emptyCategory()],
     });
@@ -412,6 +437,7 @@ export default function Budget() {
           limit: Number(item.limit),
           accountId: item.accountId,
           type: item.type || "Expense",
+          group: item.group || null,
         }));
 
       // -------------------------
@@ -577,31 +603,9 @@ export default function Budget() {
     0,
   );
 
-  const utilization =
-    totalBudget > 0
-      ? Math.min(100, Math.max(0, Math.round((totalSpent / totalBudget) * 100)))
-      : 0;
-
-  const categoryData = (budget?.categories || []).map((item) => {
-    const spent = expenses
-      .filter(
-        (expense) =>
-          expense.category?.toLowerCase().trim() ===
-          item.name?.toLowerCase().trim(),
-      )
-      .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-
-    const account = accounts.find(
-      (acc) => String(acc._id) === String(item.accountId),
-    );
-
-    return {
-      ...item,
-      spent,
-      accountName: account?.name || "Unassigned",
-      accountIcon: account?.icon || "🏦",
-    };
-  });
+  // `utilization` and `categoryData` lived here and derived per-category
+  // spend from Expense rows alone. The server-side overview does it from
+  // the ledger instead, so a split share counts and both figures agree.
 
   const budgetableIncome = Number(planning?.income?.budgetable || 0);
 
@@ -610,10 +614,10 @@ export default function Budget() {
   const isOverIncome = budgetableIncome > 0 && totalBudget > budgetableIncome;
 
   const incomeCoverage =
-    totalBudget > 0
-      ? Math.round((budgetableIncome / totalBudget) * 100)
-      : 0;
+    totalBudget > 0 ? Math.round((budgetableIncome / totalBudget) * 100) : 0;
 
+  // Drives the live warning inside the edit form, so it reads the form state
+  // rather than the saved budget.
   const totalCategoryLimit = budgetForm.categories.reduce(
     (sum, item) => sum + Number(item.limit || 0),
     0,
@@ -621,6 +625,92 @@ export default function Budget() {
 
   const isBudgetExceeded =
     totalCategoryLimit > Number(budgetForm.totalBudget || 0);
+
+  // =========================
+  // PLAN ADJUSTMENTS
+  //
+  // All three write the same way: take the saved budget, change the limits,
+  // and save it back. Nothing here moves money - it moves the plan.
+  // =========================
+
+  const saveAdjustedCategories = async (nextCategories, successMessage) => {
+    if (!budget?._id) return;
+
+    try {
+      setApplying(true);
+
+      await updateBudget(budget._id, {
+        month: budget.month,
+        totalBudget: budget.totalBudget,
+        categories: nextCategories,
+      });
+
+      toast.success(successMessage);
+
+      await loadData();
+    } catch (error) {
+      console.error(error);
+
+      toast.error(
+        error?.response?.data?.message || "Could not update the plan",
+      );
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleApplyProposal = (proposal) => {
+    const cuts = new Map(
+      (proposal.changes || []).map((change) => [change.name, change.to]),
+    );
+
+    saveAdjustedCategories(
+      (budget.categories || []).map((category) =>
+        cuts.has(category.name)
+          ? { ...category, limit: cuts.get(category.name) }
+          : category,
+      ),
+      "Plan fitted to your available cash",
+    );
+  };
+
+  const handleCoverOverspend = ({ target, source, amount }) => {
+    saveAdjustedCategories(
+      (budget.categories || []).map((category) => {
+        if (category.name === target) {
+          return { ...category, limit: Number(category.limit || 0) + amount };
+        }
+
+        // Unallocated money needs no donor line - the total already covers
+        // it, so only a category source gives anything up.
+        if (source.kind === "category" && category.name === source.name) {
+          return { ...category, limit: Number(category.limit || 0) - amount };
+        }
+
+        return category;
+      }),
+      `${money(amount)} moved into ${target}`,
+    );
+  };
+
+  // Folding an off-plan category in. Its limit starts at what has already
+  // been spent, which is the smallest honest number: anything less would
+  // create an overspend the moment it is added.
+  const handleAdoptCategory = (item) => {
+    saveAdjustedCategories(
+      [
+        ...(budget.categories || []),
+        {
+          name: item.name,
+          limit: Math.ceil(item.spent),
+          type: "Expense",
+          group: null,
+          accountId: null,
+        },
+      ],
+      `${item.name} added to your plan`,
+    );
+  };
 
   // =========================
   // UI
@@ -660,6 +750,21 @@ export default function Budget() {
           )}
         </div>
       </motion.div>
+
+      {/* The month measured against the plan. Leads the page: what actually
+          happened matters more than the form that set it up. */}
+      {overview?.hasBudget && (
+        <div className="mb-8">
+          <BudgetOverview
+            overview={overview}
+            busy={applying}
+            onApplyProposal={handleApplyProposal}
+            onCoverOverspend={handleCoverOverspend}
+            onAdoptCategory={handleAdoptCategory}
+            onEditPlan={openBudgetModal}
+          />
+        </div>
+      )}
 
       {/* Income -> Budget: the plan is built on recorded income */}
       <motion.div
@@ -740,134 +845,10 @@ export default function Budget() {
         )}
       </motion.div>
 
-      {/* Summary Cards */}
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
-        {[
-          {
-            label: "Monthly Budget",
-            value: totalBudget,
-            className: "bg-white/5 border border-white/10",
-            valueClassName: "",
-          },
-          {
-            label: "Budgetable Income",
-            value: budgetableIncome,
-            className: "bg-green-500/10 border border-green-500/20",
-            valueClassName: "text-green-400",
-          },
-          {
-            label: "Total Spent",
-            value: totalSpent,
-            className: "bg-white/5 border border-white/10",
-            valueClassName: "text-red-400",
-          },
-          {
-            label: "Remaining",
-            value: remaining,
-            className: "bg-white/5 border border-white/10",
-            valueClassName: "text-green-400",
-          },
-        ].map((card, index) => (
-          <motion.div
-            key={card.label}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, delay: index * 0.05 }}
-            className={`rounded-2xl p-5 ${card.className}`}
-          >
-            <p className="text-slate-400">{card.label}</p>
-
-            <h3 className={`text-3xl font-bold mt-2 ${card.valueClassName}`}>
-              ₹{Number(card.value).toLocaleString()}
-            </h3>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Budget Health */}
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: 0.1 }}
-        className="mb-8"
-      >
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <FiTrendingUp className="text-indigo-400" size={22} />
-
-            <h3 className="text-xl font-semibold">Budget Health</h3>
-          </div>
-
-          <div className="flex justify-between mb-3">
-            <span>Budget Utilization</span>
-
-            <span className="font-semibold">{utilization}%</span>
-          </div>
-
-          <div className="w-full bg-slate-700 rounded-full h-4">
-            <div
-              className="h-4 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500"
-              style={{
-                width: `${utilization}%`,
-              }}
-            />
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Category Budgets */}
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: 0.15 }}
-        className="bg-white/5 border border-white/10 rounded-2xl p-6"
-      >
-        <div className="flex items-center gap-3 mb-6">
-          <FiTarget className="text-cyan-400" size={22} />
-
-          <h3 className="text-xl font-semibold">Category Budgets</h3>
-        </div>
-
-        {categoryData.length === 0 ? (
-          <EmptyState
-            icon={FiTarget}
-            title="No categories yet"
-            message="Create a budget with categories to start tracking your spending."
-            action={
-              <Button
-                variant="primary"
-                size="sm"
-                icon={FiPlus}
-                onClick={openBudgetModal}
-              >
-                Add Category Budget
-              </Button>
-            }
-          />
-        ) : (
-          <div className="space-y-6">
-            {categoryData.map((item, index) => (
-              <motion.div
-                key={item.name}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: index * 0.04 }}
-              >
-                <CategoryProgressBar
-                  name={item.name}
-                  spent={item.spent}
-                  limit={item.limit}
-                  accountName={item.accountName}
-                  accountIcon={item.accountIcon}
-                />
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </motion.div>
+      {/* The summary cards, health bar and category list that used to sit
+          here are gone: BudgetOverview above supersedes all three, and
+          theirs counted Expense rows only - so they quoted a smaller
+          "total spent" than the overview directly above them. */}
 
       {/* AI Insight */}
 
@@ -883,13 +864,34 @@ export default function Budget() {
           <h3 className="text-xl font-semibold">AI Budget Suggestion</h3>
         </div>
 
+        {/* Reads the same ledger totals as the overview above. It used to
+            sum Expense rows on its own, which is why it could claim a
+            smaller spend than the panel a few inches higher. */}
         <p className="text-slate-300 mt-4">
-          You have spent ₹{totalSpent.toLocaleString()} from your ₹
-          {totalBudget.toLocaleString()} budget.
+          You have spent {money(overview?.totals?.totalSpent ?? totalSpent)} of
+          your {money(totalBudget)} budget
+          {overview?.totals?.unbudgetedTotal > 0 && (
+            <>
+              , including{" "}
+              <span className="text-amber-300">
+                {money(overview.totals.unbudgetedTotal)}
+              </span>{" "}
+              on categories your plan does not have
+            </>
+          )}
+          .
         </p>
 
-        <p className="text-green-400 mt-4 font-medium">
-          Remaining Budget: ₹{remaining.toLocaleString()}
+        <p
+          className={`mt-4 font-medium ${
+            (overview?.totals?.net ?? remaining) < 0
+              ? "text-red-400"
+              : "text-green-400"
+          }`}
+        >
+          {(overview?.totals?.net ?? remaining) < 0
+            ? `Over budget by ${money(Math.abs(overview?.totals?.net ?? remaining))}`
+            : `Remaining budget: ${money(overview?.totals?.remaining ?? remaining)}`}
         </p>
       </motion.div>
 
@@ -1041,24 +1043,30 @@ export default function Budget() {
                   ))}
                 </Select>
 
-                {/* Type + Remove */}
+                {/* Need / want / save + Remove */}
 
                 <div className="flex gap-3">
                   <Select
-                    aria-label="Category type"
+                    aria-label="Category group"
                     className="flex-1"
-                    value={category.type}
+                    value={category.group || ""}
                     onChange={(e) =>
-                      handleCategoryChange(index, "type", e.target.value)
+                      handleCategoryChange(
+                        index,
+                        "group",
+                        e.target.value || null,
+                      )
                     }
                   >
-                    <option value="Expense">Expense</option>
+                    {/* Blank means "not chosen", and the plan falls back to a
+                        sensible group rather than forcing a decision here. */}
+                    <option value="">Auto</option>
 
-                    <option value="Savings">Savings</option>
+                    <option value="need">Need</option>
 
-                    <option value="Investment">Investment</option>
+                    <option value="want">Want</option>
 
-                    <option value="Bill">Bill</option>
+                    <option value="save">Save / invest</option>
                   </Select>
 
                   <div className="flex shrink-0 gap-1 self-start">

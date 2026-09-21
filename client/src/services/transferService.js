@@ -12,6 +12,14 @@ export const createTransfer = async (transferData) => {
   return response.data;
 };
 
+// Reverses the original movement in full and applies the new one, so
+// changing the accounts - not just the amount - lands correctly.
+export const updateTransfer = async (id, data) => {
+  const response = await api.put(`/transfers/${id}`, data);
+
+  return response.data;
+};
+
 export const deleteTransfer = async (id) => {
   const response = await api.delete(`/transfers/${id}`);
 

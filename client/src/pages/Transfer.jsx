@@ -4,6 +4,8 @@ import {
   FiRepeat,
   FiSearch,
   FiTrash2,
+  FiEdit2,
+  FiX,
   FiArrowRight,
   FiArrowDown,
   FiCheckCircle,
@@ -15,6 +17,7 @@ import { getAccountsByUser } from "../services/accountService";
 import {
   getTransfersByUser,
   createTransfer,
+  updateTransfer,
   deleteTransfer,
 } from "../services/transferService";
 
@@ -40,6 +43,10 @@ export default function Transfer() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Editing reuses the form above rather than a second modal - the fields
+  // are identical, and the header says which mode it is in.
+  const [editing, setEditing] = useState(null);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -95,12 +102,30 @@ export default function Transfer() {
 
   const amountValue = Number(formData.amount || 0);
 
+  // While editing, the live balances still carry the original transfer. The
+  // server reverses it before applying the new one, so the preview - and the
+  // funds check below - have to add it back first.
+  const balanceWithoutEdit = (account) => {
+    if (!account) return 0;
+
+    let balance = Number(account.balance || 0);
+
+    if (editing) {
+      if (account._id === editing.fromAccountId) balance += editing.amount;
+      if (account._id === editing.toAccountId) balance -= editing.amount;
+    }
+
+    return balance;
+  };
+
+  const fromBalanceBefore = balanceWithoutEdit(fromAccountData);
+
   const fromBalanceAfter = fromAccountData
-    ? Number(fromAccountData.balance || 0) - amountValue
+    ? fromBalanceBefore - amountValue
     : 0;
 
   const toBalanceAfter = toAccountData
-    ? Number(toAccountData.balance || 0) + amountValue
+    ? balanceWithoutEdit(toAccountData) + amountValue
     : 0;
 
   const handleSwap = () => {
@@ -131,7 +156,7 @@ export default function Transfer() {
         return;
       }
 
-      if (fromAccountData && amountValue > Number(fromAccountData.balance)) {
+      if (fromAccountData && amountValue > fromBalanceBefore) {
         toast.error("Insufficient balance in source account");
 
         return;
@@ -141,14 +166,22 @@ export default function Transfer() {
 
       const transferDate = new Date(`${formData.date}T${formData.time}`);
 
-      await createTransfer({
+      const payload = {
         userId: getUserId(),
         fromAccountId: formData.fromAccount,
         toAccountId: formData.toAccount,
         amount: amountValue,
         note: formData.note,
         transferDate,
-      });
+      };
+
+      if (editing) {
+        await updateTransfer(editing._id, payload);
+      } else {
+        await createTransfer(payload);
+      }
+
+      setEditing(null);
 
       setFormData({
         fromAccount: "",
@@ -161,7 +194,9 @@ export default function Transfer() {
 
       await Promise.all([fetchAccounts(), fetchTransfers()]);
 
-      toast.success("Transfer completed successfully");
+      toast.success(
+        editing ? "Transfer updated" : "Transfer completed successfully",
+      );
     } catch (error) {
       console.error(error);
 
@@ -169,6 +204,36 @@ export default function Transfer() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const startEditTransfer = (transfer) => {
+    const when = transfer.transferDate
+      ? new Date(transfer.transferDate)
+      : new Date();
+
+    setEditing(transfer);
+    setFormData({
+      fromAccount: transfer.fromAccountId || "",
+      toAccount: transfer.toAccountId || "",
+      amount: String(transfer.amount ?? ""),
+      note: transfer.note || "",
+      date: `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, "0")}-${String(when.getDate()).padStart(2, "0")}`,
+      time: when.toTimeString().slice(0, 5),
+    });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEditTransfer = () => {
+    setEditing(null);
+    setFormData({
+      fromAccount: "",
+      toAccount: "",
+      amount: "",
+      note: "",
+      date: new Date().toISOString().split("T")[0],
+      time: new Date().toTimeString().slice(0, 5),
+    });
   };
 
   const requestDeleteTransfer = (transfer) => {
@@ -380,7 +445,29 @@ export default function Transfer() {
 
       {/* New Transfer form */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-5">New Transfer</h2>
+        <div className="flex items-center justify-between gap-4 mb-5">
+          <h2 className="text-xl font-semibold">
+            {editing ? "Edit Transfer" : "New Transfer"}
+          </h2>
+
+          {editing && (
+            <button
+              type="button"
+              onClick={cancelEditTransfer}
+              className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:border-white/25 hover:text-white"
+            >
+              <FiX size={15} />
+              Cancel edit
+            </button>
+          )}
+        </div>
+
+        {editing && (
+          <div className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-200 p-4 rounded-2xl mb-6">
+            The original transfer is reversed and re-applied when you save, so
+            you can change the accounts as well as the amount.
+          </div>
+        )}
 
         {accounts.length < 2 && (
           <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 p-4 rounded-2xl mb-6">
@@ -539,7 +626,11 @@ export default function Transfer() {
           className="mt-6 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 rounded-xl transition"
         >
           <FiCheckCircle />
-          {submitting ? "Transferring..." : "Transfer Money"}
+          {submitting
+            ? "Saving..."
+            : editing
+              ? "Save Changes"
+              : "Transfer Money"}
         </button>
       </div>
 
@@ -595,7 +686,9 @@ export default function Transfer() {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ duration: 0.2, delay: Math.min(index, 10) * 0.02 }}
-                      className="border-b border-white/5 hover:bg-white/5 transition"
+                      className={`border-b border-white/5 transition hover:bg-white/5 ${
+                        editing?._id === transfer._id ? "bg-indigo-500/10" : ""
+                      }`}
                     >
                       <td className="p-5">
                         <div className="flex items-center gap-2">
@@ -627,11 +720,19 @@ export default function Transfer() {
                         ₹{Number(transfer.amount).toLocaleString()}
                       </td>
 
-                      <td className="p-5 text-center">
+                      <td className="p-5 text-center whitespace-nowrap">
+                        <button
+                          onClick={() => startEditTransfer(transfer)}
+                          aria-label="Edit transfer"
+                          className="text-slate-400 transition-colors hover:text-white"
+                        >
+                          <FiEdit2 size={17} />
+                        </button>
+
                         <button
                           onClick={() => requestDeleteTransfer(transfer)}
                           aria-label="Delete transfer"
-                          className="text-red-400 hover:text-red-300"
+                          className="ml-4 text-red-400 hover:text-red-300"
                         >
                           <FiTrash2 size={18} />
                         </button>

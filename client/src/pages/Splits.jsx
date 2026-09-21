@@ -7,6 +7,7 @@ import {
   FiCheck,
   FiPlus,
   FiTrash2,
+  FiEdit2,
   FiUserPlus,
   FiUsers,
   FiX,
@@ -26,6 +27,7 @@ import {
   getSplitOptions,
   getSplitOverview,
   createSplit,
+  updateSplit,
   settleSplit,
   getSplitDeleteImpact,
   deleteSplit,
@@ -118,6 +120,7 @@ export default function Splits() {
   const [saving, setSaving] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
 
   const [settleTarget, setSettleTarget] = useState(null);
@@ -205,8 +208,38 @@ export default function Splits() {
   // =====================================================================
 
   const openAdd = () => {
+    setEditing(null);
     setForm({ ...emptyForm(), accountId: accounts[0]?._id || "" });
     setShowModal(true);
+  };
+
+  // Settled amounts are not part of the form - the server carries them across
+  // by name, so an edit cannot quietly erase a repayment that already happened.
+  const openEdit = (split) => {
+    setEditing(split);
+    setForm({
+      description: split.description || "",
+      totalAmount: String(split.totalAmount ?? ""),
+      date: toInputDate(split.date),
+      category: split.category || "",
+      groupName: split.groupName || "",
+      paidByMe: Boolean(split.paidByMe),
+      payerName: split.payerName || "",
+      accountId: split.accountId || accounts[0]?._id || "",
+      splitMethod: split.splitMethod || "equal",
+      participants: (split.participants || []).map((participant) => ({
+        name: participant.name || "",
+        isMe: Boolean(participant.isMe),
+        shareInput: participant.shareInput ? String(participant.shareInput) : "",
+      })),
+      note: split.note || "",
+    });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditing(null);
   };
 
   const setParticipant = (index, patch) =>
@@ -265,7 +298,7 @@ export default function Splits() {
     try {
       setSaving(true);
 
-      await createSplit({
+      const payload = {
         userId: getUserId(),
         description: form.description,
         totalAmount: parsedTotal.value,
@@ -282,15 +315,23 @@ export default function Splits() {
           shareInput: Number(p.shareInput || 0),
         })),
         note: form.note,
-      });
+      };
+
+      if (editing) {
+        await updateSplit(editing._id, payload);
+      } else {
+        await createSplit(payload);
+      }
 
       toast.success(
-        form.paidByMe
-          ? `Split recorded — ${money(myPreviewShare)} booked as your expense`
-          : "Split recorded — settle your share when you pay it",
+        editing
+          ? "Split updated"
+          : form.paidByMe
+            ? `Split recorded — ${money(myPreviewShare)} booked as your expense`
+            : "Split recorded — settle your share when you pay it",
       );
 
-      setShowModal(false);
+      closeModal();
       await loadPage();
     } catch (error) {
       console.error(error);
@@ -671,8 +712,16 @@ export default function Splits() {
                     )}
 
                     <button
+                      onClick={() => openEdit(split)}
+                      className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-slate-300 transition hover:border-white/25 hover:text-white"
+                    >
+                      <FiEdit2 />
+                      Edit
+                    </button>
+
+                    <button
                       onClick={() => requestDelete(split)}
-                      className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-red-500/20 px-2.5 py-1.5 text-red-300 transition hover:border-red-500/40"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/20 px-2.5 py-1.5 text-red-300 transition hover:border-red-500/40"
                     >
                       <FiTrash2 />
                       Remove
@@ -688,10 +737,17 @@ export default function Splits() {
       {/* ============ ADD ============ */}
       <Modal
         isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        title="Split a bill"
+        onClose={closeModal}
+        title={editing ? "Edit split" : "Split a bill"}
         maxWidth="max-w-3xl"
       >
+        {editing && (
+          <div className="mb-4 rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-4 text-sm text-indigo-200">
+            Saving reverses the original bill and books it again. Repayments
+            already received are kept and matched back by name, so a share
+            cannot be cut below what that person has already paid you.
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-2">
           <Input
             label="What was it for"
@@ -931,15 +987,11 @@ export default function Splits() {
         />
 
         <div className="mt-6 flex justify-end gap-3">
-          <Button
-            variant="secondary"
-            onClick={() => setShowModal(false)}
-            disabled={saving}
-          >
+          <Button variant="secondary" onClick={closeModal} disabled={saving}>
             Cancel
           </Button>
           <Button onClick={handleSave} loading={saving}>
-            Record split
+            {editing ? "Save changes" : "Record split"}
           </Button>
         </div>
       </Modal>
