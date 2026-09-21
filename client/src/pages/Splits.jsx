@@ -36,8 +36,7 @@ import { getAccountsByUser } from "../services/accountService";
 import { getUserId } from "../utils/auth";
 import { money } from "../utils/incomeFormulas";
 import { evaluateExpression } from "../utils/calc";
-
-const round2 = (value) => Math.round(Number(value || 0) * 100) / 100;
+import { previewShares, round2 } from "../utils/splitShares";
 
 const toInputDate = (value) => {
   const date = value ? new Date(value) : new Date();
@@ -73,41 +72,6 @@ const emptyForm = () => ({
   note: "",
 });
 
-// Mirrors computeShares on the server so the form can show each person's
-// amount as it is typed. The server recomputes on save and its answer wins.
-const previewShares = (total, method, participants) => {
-  const amount = Number(total || 0);
-  const people = participants || [];
-
-  if (people.length === 0) return [];
-
-  let shares;
-
-  if (method === "exact") {
-    shares = people.map((p) => round2(p.shareInput));
-  } else if (method === "percentage") {
-    shares = people.map((p) => round2((amount * Number(p.shareInput || 0)) / 100));
-  } else if (method === "shares") {
-    const weights = people.map((p) => Math.max(Number(p.shareInput || 0), 0));
-    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-
-    shares = totalWeight
-      ? weights.map((w) => round2((amount * w) / totalWeight))
-      : people.map(() => 0);
-  } else {
-    const even = round2(amount / people.length);
-
-    shares = people.map(() => even);
-  }
-
-  if (method !== "exact") {
-    const drift = round2(amount - shares.reduce((sum, s) => sum + s, 0));
-
-    if (drift !== 0) shares[0] = round2(shares[0] + drift);
-  }
-
-  return shares.map((value) => Math.max(value, 0));
-};
 
 export default function Splits() {
   const toast = useToast();

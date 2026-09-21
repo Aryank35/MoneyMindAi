@@ -14,11 +14,16 @@ import investmentRoutes from "./routes/investmentRoutes.js";
 import scheduleRoutes from "./routes/scheduleRoutes.js";
 import obligationRoutes from "./routes/obligationRoutes.js";
 import splitRoutes from "./routes/splitRoutes.js";
+import eventRoutes from "./routes/eventRoutes.js";
 
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+// Bill photos and event pictures are posted as base64 data URLs, and base64
+// is a third larger than the file it encodes. The default 100kb ceiling
+// would reject every one of them with a bare 413 before the controller -
+// which does its own per-file size check - ever saw the request.
+app.use(express.json({ limit: "8mb" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -40,6 +45,8 @@ app.use("/api/schedules", scheduleRoutes);
 app.use("/api/obligations", obligationRoutes);
 
 app.use("/api/splits", splitRoutes);
+
+app.use("/api/events", eventRoutes);
 
 // Cheap liveness probe: no database work, so the client can use it both to
 // detect whether the API is reachable and to wake a sleeping instance

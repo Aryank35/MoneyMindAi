@@ -54,6 +54,18 @@ const participantSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+
+    // Whether this person's share is coming back to me.
+    //
+    //   true   I fronted it and expect it back - an advance, not spending
+    //   false  I am treating them - their share is my own expense
+    //
+    // Defaults to true so every split written before this existed keeps
+    // behaving exactly as it did.
+    recoverable: {
+      type: Boolean,
+      default: true,
+    },
   },
   { _id: false },
 );
@@ -94,6 +106,14 @@ const splitSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
+    },
+
+    // Set when this bill belongs to a planned event, which is what lets the
+    // event page total its own spending without a parallel expense model.
+    eventId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Event",
+      default: null,
     },
 
     paidByMe: {
@@ -168,5 +188,6 @@ const splitSchema = new mongoose.Schema(
 );
 
 splitSchema.index({ userId: 1, date: -1 });
+splitSchema.index({ eventId: 1, date: -1 });
 
 export default mongoose.model("Split", splitSchema);

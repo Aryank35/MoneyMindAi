@@ -47,6 +47,33 @@ export const computeShares = (totalAmount, method, participants) => {
   return people.map((p, i) => ({ ...p, share: Math.max(shares[i], 0) }));
 };
 
+// What this bill actually cost ME, which is not the same as my share.
+//
+// My share is my own consumption. On top of that, anything I fronted for
+// someone and marked as not coming back is a treat - real spending of mine,
+// even though I never ate it. The rest is an advance: money out, owed back.
+//
+//   myCost  = my share + the shares I am covering for good
+//   advance = the bill - myCost
+//
+// Every place that writes, reverses or refunds the expense uses this, so
+// the three can never drift apart.
+export const computeMyCost = (participants) => {
+  const people = participants || [];
+
+  const myShare = Number(people.find((p) => p.isMe)?.share || 0);
+
+  const treated = people
+    .filter((p) => !p.isMe && p.recoverable === false)
+    .reduce((sum, p) => sum + Number(p.share || 0), 0);
+
+  return {
+    myShare: round2(myShare),
+    treated: round2(treated),
+    myCost: round2(myShare + treated),
+  };
+};
+
 const validate = (body) => {
   if (!body.description?.trim()) return "Give this a description";
 
@@ -54,8 +81,13 @@ const validate = (body) => {
 
   const people = body.participants || [];
 
-  if (people.length < 2) {
-    return "A split needs at least two people, including you";
+  // A standalone split with one person is just an expense, so it is refused.
+  // Inside an event it is the common case - "I paid 800 for fuel" - and the
+  // maths degenerates correctly: my share is the whole bill, advance zero.
+  if (people.length < (body.eventId ? 1 : 2)) {
+    return body.eventId
+      ? "Add at least one person to this expense"
+      : "A split needs at least two people, including you";
   }
 
   if (people.some((p) => !p.name?.trim())) return "Every person needs a name";
@@ -66,7 +98,9 @@ const validate = (body) => {
     return "Two people cannot have the same name";
   }
 
-  if (!people.some((p) => p.isMe)) {
+  // Inside an event you may well be logging a bill you had no part in -
+  // someone else's cab to the venue - purely so the event total is right.
+  if (!body.eventId && !people.some((p) => p.isMe)) {
     return "Mark which participant is you";
   }
 
@@ -115,16 +149,25 @@ const decorate = (document) => {
 
   const others = (split.participants || []).filter((p) => !p.isMe);
 
-  // What is still moving. When I paid, others owe me their unsettled share;
-  // when someone else paid, I owe mine.
+  const { treated, myCost } = computeMyCost(split.participants);
+
+  // What is still moving. When I paid, others owe me their unsettled share -
+  // but only the ones whose share I actually want back. A treat is settled
+  // the moment it is given.
   const owedToMe = split.paidByMe
-    ? others.reduce(
-        (sum, p) => sum + Math.max(Number(p.share || 0) - Number(p.settledAmount || 0), 0),
-        0,
-      )
+    ? others
+        .filter((p) => p.recoverable !== false)
+        .reduce(
+          (sum, p) => sum + Math.max(Number(p.share || 0) - Number(p.settledAmount || 0), 0),
+          0,
+        )
     : 0;
 
-  const iOwe = split.paidByMe
+  // Someone else paid and told me not to worry about it: nothing is owed and
+  // nothing was ever spent by me.
+  const iWasTreated = !split.paidByMe && me?.recoverable === false;
+
+  const iOwe = split.paidByMe || iWasTreated
     ? 0
     : Math.max(myShare - Number(me?.settledAmount || 0), 0);
 
@@ -136,6 +179,11 @@ const decorate = (document) => {
   return {
     ...split,
     myShare,
+    // What this cost me, treats included. This - not myShare - is the figure
+    // that was booked as an expense.
+    myCost: split.paidByMe ? myCost : iWasTreated ? 0 : myShare,
+    treatedAmount: split.paidByMe ? treated : 0,
+    iWasTreated,
     owedToMe: round2(owedToMe),
     iOwe: round2(iOwe),
     settledTotal: round2(settledTotal),
@@ -180,11 +228,12 @@ export const createSplit = async (req, res) => {
         isMe: Boolean(p.isMe),
         shareInput: Number(p.shareInput || 0),
         settledAmount: 0,
+        recoverable: p.recoverable !== false,
       })),
     );
 
     const total = Number(req.body.totalAmount);
-    const myShare = Number(participants.find((p) => p.isMe)?.share || 0);
+    const { myCost } = computeMyCost(participants);
     const date = req.body.date ? new Date(req.body.date) : new Date();
     const paidByMe = req.body.paidByMe !== false;
 
@@ -207,24 +256,24 @@ export const createSplit = async (req, res) => {
           .json({ success: false, message: "Account not found" });
       }
 
-      // My share is the only part that is genuinely my spending.
-      if (myShare > 0) {
+      // My share plus anything I am covering for good is my spending.
+      if (myCost > 0) {
         const expense = await Expense.create({
           userId: req.body.userId,
           accountId: String(req.body.accountId),
           category: req.body.category?.trim() || "Shared",
-          amount: myShare,
+          amount: myCost,
           note: `${req.body.description.trim()} (my share of a split)`,
           expenseDate: date,
         });
 
-        await deductBalance(req.body.accountId, myShare);
+        await deductBalance(req.body.accountId, myCost);
 
         expenseId = expense._id;
       }
 
       // The rest left the account too, but it is owed back rather than spent.
-      advanceAmount = round2(total - myShare);
+      advanceAmount = round2(total - myCost);
 
       if (advanceAmount > 0) {
         await deductBalance(req.body.accountId, advanceAmount);
@@ -238,6 +287,7 @@ export const createSplit = async (req, res) => {
       date,
       category: req.body.category?.trim() || "",
       groupName: req.body.groupName?.trim() || "",
+      eventId: req.body.eventId || null,
       paidByMe,
       payerName: paidByMe ? "" : req.body.payerName.trim(),
       accountId: paidByMe ? req.body.accountId : null,
@@ -313,12 +363,11 @@ export const deleteSplit = async (req, res) => {
       if (split.expenseId) {
         await Expense.findByIdAndDelete(split.expenseId);
 
-        const myShare = Number(
-          split.participants.find((p) => p.isMe)?.share || 0,
-        );
+        // Refund exactly what was charged, treats included.
+        const { myCost } = computeMyCost(split.participants);
 
-        await addBalance(split.accountId, myShare);
-        refunded += myShare;
+        await addBalance(split.accountId, myCost);
+        refunded += myCost;
       }
 
       if (split.advanceAmount > 0) {
@@ -389,6 +438,16 @@ export const settleSplit = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `${split.payerName} paid this bill, so only your own share settles here`,
+      });
+    }
+
+    // Nothing to collect on a share that was never coming back.
+    if (participant.recoverable === false) {
+      return res.status(400).json({
+        success: false,
+        message: participant.isMe
+          ? "This one was on someone else - you owe nothing for it"
+          : `${participant.name}'s share is on you, so there is nothing to collect`,
       });
     }
 
@@ -491,7 +550,7 @@ export const getSplitOverview = async (req, res) => {
           Number(participant.share || 0) - Number(participant.settledAmount || 0),
         );
 
-        if (split.paidByMe) {
+        if (split.paidByMe && participant.recoverable !== false) {
           entry.owesMe = round2(entry.owesMe + Math.max(unsettled, 0));
         }
 
@@ -555,7 +614,7 @@ export const getSplitOverview = async (req, res) => {
           open: splits.filter((s) => !s.isFullySettled).length,
           // The user's own spending across shared bills - not the bill totals,
           // which include other people's money.
-          myShareTotal: round2(splits.reduce((sum, s) => sum + s.myShare, 0)),
+          myShareTotal: round2(splits.reduce((sum, s) => sum + s.myCost, 0)),
           billedTotal: round2(splits.reduce((sum, s) => sum + s.totalAmount, 0)),
         },
       },
@@ -596,6 +655,7 @@ export const updateSplit = async (req, res) => {
         name: p.name.trim(),
         isMe: Boolean(p.isMe),
         shareInput: Number(p.shareInput || 0),
+        recoverable: p.recoverable !== false,
         // Carry forward what each person has already settled, matched by
         // name, so an edit does not wipe the repayment history.
         settledAmount: Number(
@@ -620,18 +680,16 @@ export const updateSplit = async (req, res) => {
     }
 
     const paidByMe = merged.paidByMe !== false;
-    const myShare = Number(participants.find((p) => p.isMe)?.share || 0);
+    const { myCost } = computeMyCost(participants);
     const date = merged.date ? new Date(merged.date) : existing.date;
 
     // ---- reverse what the original bill did ----
     if (existing.paidByMe && existing.accountId) {
-      const oldMyShare = Number(
-        existing.participants.find((p) => p.isMe)?.share || 0,
-      );
+      const { myCost: oldMyCost } = computeMyCost(existing.participants);
 
       if (existing.expenseId) {
         await Expense.findByIdAndDelete(existing.expenseId);
-        await addBalance(existing.accountId, oldMyShare);
+        await addBalance(existing.accountId, oldMyCost);
       }
 
       if (existing.advanceAmount > 0) {
@@ -653,22 +711,22 @@ export const updateSplit = async (req, res) => {
         });
       }
 
-      if (myShare > 0) {
+      if (myCost > 0) {
         const expense = await Expense.create({
           userId: existing.userId,
           accountId: String(accountId),
           category: merged.category?.trim() || "Shared",
-          amount: myShare,
+          amount: myCost,
           note: `${merged.description.trim()} (my share of a split)`,
           expenseDate: date,
         });
 
-        await deductBalance(accountId, myShare);
+        await deductBalance(accountId, myCost);
 
         expenseId = expense._id;
       }
 
-      advanceAmount = round2(total - myShare);
+      advanceAmount = round2(total - myCost);
 
       if (advanceAmount > 0) await deductBalance(accountId, advanceAmount);
     }
@@ -679,6 +737,7 @@ export const updateSplit = async (req, res) => {
       date,
       category: merged.category?.trim() || "",
       groupName: merged.groupName?.trim() || "",
+      eventId: merged.eventId || null,
       paidByMe,
       payerName: paidByMe ? "" : merged.payerName.trim(),
       accountId: paidByMe ? merged.accountId : null,
