@@ -8,6 +8,7 @@ import {
   getBudgetPlanning,
   getBudgetDeleteImpact,
   getBudgetOverview,
+  getBudgetMonths,
 } from "../controllers/budgetController.js";
 
 const budgetRoutes = express.Router();
@@ -27,6 +28,9 @@ budgetRoutes.get("/planning/:userId", getBudgetPlanning);
 
 // The current month's plan measured against what actually happened.
 budgetRoutes.get("/overview/:userId", getBudgetOverview);
+
+// Which months have a plan, for the history navigator.
+budgetRoutes.get("/months/:userId", getBudgetMonths);
 
 budgetRoutes.get("/:id/delete-impact", getBudgetDeleteImpact);
 

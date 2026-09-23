@@ -409,8 +409,13 @@ export const getBudgetOverview = async (req, res) => {
       return SPEND_KINDS.has(entry.kind) && date >= from && date <= to;
     });
 
-    // Only this month's plan can be measured against this month's cash.
-    const isCurrentMonth = key === monthKeyOf(now);
+    // Only this month's plan can be measured against this month's cash: a
+    // past month's balances are gone, and a future month's have not happened.
+    const currentKey = monthKeyOf(now);
+
+    const isCurrentMonth = key === currentKey;
+    const isPast = key < currentKey;
+    const isFuture = key > currentKey;
 
     let safeToSpend = null;
 
@@ -436,6 +441,12 @@ export const getBudgetOverview = async (req, res) => {
 
     const plan = buildBudgetPlan({ budget, spendRows, safeToSpend });
 
+    // The month before this one, so a month with no plan yet can be started
+    // from the last one rather than from an empty form.
+    const previousKey = monthKeyOf(new Date(year, month - 2, 1));
+
+    const previous = await findBudgetForMonth(userId, previousKey);
+
     res.json({
       success: true,
       data: {
@@ -443,13 +454,93 @@ export const getBudgetOverview = async (req, res) => {
         monthKey: key,
         month: budget?.month || monthLabelOf(from),
         isCurrentMonth,
+        isPast,
+        isFuture,
         hasBudget: Boolean(budget),
+
+        previousMonth: previous
+          ? {
+              monthKey: previousKey,
+              month: previous.month,
+              totalBudget: Number(previous.totalBudget || 0),
+              allocationRule: previous.allocationRule || undefined,
+              categories: (previous.categories || []).map((category) => ({
+                name: category.name,
+                limit: Number(category.limit || 0),
+                group: category.group || null,
+                type: category.type || "Expense",
+                accountId: category.accountId || null,
+              })),
+            }
+          : null,
         budgetId: budget?._id || null,
         estimatedIncome: budget?.estimatedIncome || 0,
         dailyLimit: budget?.dailyLimit || 0,
         weeklyLimit: budget?.weeklyLimit || 0,
         proposal: proposeFitToCash(plan),
       },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Every month that has a plan, newest first, plus the current month and the
+// next one so the navigator can always offer "this month" and "plan ahead"
+// even before a budget exists for them.
+export const getBudgetMonths = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const budgets = await Budget.find({ userId }).sort({ createdAt: -1 });
+
+    const now = new Date();
+
+    const currentKey = monthKeyOf(now);
+
+    const nextKey = monthKeyOf(
+      new Date(now.getFullYear(), now.getMonth() + 1, 1),
+    );
+
+    const seen = new Map();
+
+    for (const budget of budgets) {
+      const key = keyForBudget(budget);
+
+      // A budget whose month cannot be read is not silently filed under some
+      // other month; it is simply not offered as one.
+      if (!key || seen.has(key)) continue;
+
+      seen.set(key, {
+        monthKey: key,
+        month: budget.month,
+        totalBudget: Number(budget.totalBudget || 0),
+        categoryCount: (budget.categories || []).length,
+        hasBudget: true,
+      });
+    }
+
+    for (const key of [currentKey, nextKey]) {
+      if (seen.has(key)) continue;
+
+      const [year, month] = key.split("-").map(Number);
+
+      seen.set(key, {
+        monthKey: key,
+        month: monthLabelOf(new Date(year, month - 1, 1)),
+        totalBudget: 0,
+        categoryCount: 0,
+        hasBudget: false,
+      });
+    }
+
+    const months = [...seen.values()].sort((a, b) =>
+      a.monthKey < b.monthKey ? 1 : -1,
+    );
+
+    res.json({
+      success: true,
+      data: { months, currentKey, nextKey },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

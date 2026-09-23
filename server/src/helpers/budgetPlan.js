@@ -130,6 +130,10 @@ export const buildBudgetPlan = ({
       spent,
       count: hit?.count || 0,
       group: groupOf(category),
+      // Carried through so a caller writing these lines back does not drop
+      // it: `type` still seeds the group for any line the user has not
+      // tagged, so losing it would silently re-file Savings as a Need.
+      type: category.type || "Expense",
       icon: category.icon,
       color: category.color,
       accountId: category.accountId,

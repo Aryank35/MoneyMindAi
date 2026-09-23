@@ -58,3 +58,11 @@ export const getBudgetOverview = async (userId, monthKey) => {
 
   return response.data;
 };
+
+// Months that have a plan, plus the current and next month so planning ahead
+// is always one tap away.
+export const getBudgetMonths = async (userId) => {
+  const response = await api.get(`/budget/months/${userId}`);
+
+  return response.data;
+};

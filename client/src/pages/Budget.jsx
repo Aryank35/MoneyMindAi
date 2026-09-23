@@ -17,6 +17,7 @@ import {
   createBudget,
   updateBudget,
   getBudgetOverview,
+  getBudgetMonths,
   deleteBudget,
   getBudgetPlanning,
   getBudgetDeleteImpact,
@@ -35,6 +36,8 @@ import { useToast } from "../components/common/Toast";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import { moveItem } from "../utils/reorder";
 import BudgetOverview from "../components/common/BudgetOverview";
+import MonthNavigator from "../components/common/MonthNavigator";
+import AllocationRuleEditor from "../components/common/AllocationRuleEditor";
 import { useDragReorder } from "../utils/dragReorder";
 import { money } from "../utils/incomeFormulas";
 
@@ -100,6 +103,12 @@ export default function Budget() {
   // the server so the spending definition matches the rest of the app.
   const [overview, setOverview] = useState(null);
   const [applying, setApplying] = useState(false);
+
+  // Which month is on screen. Null until the first load names it, so the
+  // page never guesses a month the server might disagree about.
+  const [monthKey, setMonthKey] = useState(null);
+  const [months, setMonths] = useState([]);
+  const [currentKey, setCurrentKey] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(() => Boolean(getUserId()));
@@ -318,15 +327,30 @@ export default function Budget() {
 
   // Kept separate from the form data: the analysis is derived server-side and
   // has to be re-read after every change that could move a figure.
-  async function loadOverview(userId) {
-    try {
-      const response = await getBudgetOverview(userId || getUserId());
+  async function loadOverview(userId, key) {
+    const id = userId || getUserId();
 
-      setOverview(response.data);
+    try {
+      const [overviewResponse, monthsResponse] = await Promise.all([
+        getBudgetOverview(id, key ?? monthKey ?? undefined),
+        getBudgetMonths(id),
+      ]);
+
+      setOverview(overviewResponse.data);
+      setMonthKey(overviewResponse.data?.monthKey || null);
+
+      setMonths(monthsResponse.data?.months || []);
+      setCurrentKey(monthsResponse.data?.currentKey || null);
     } catch (error) {
       console.error("Error loading budget overview:", error);
     }
   }
+
+  const selectMonth = async (key) => {
+    setMonthKey(key);
+
+    await loadOverview(undefined, key);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -372,16 +396,23 @@ export default function Budget() {
   // OPEN MODAL
   // =========================
 
+  // Seeded from the month on screen. `budget` holds whichever budget was
+  // created most recently, which is not the same month - editing while
+  // viewing October would otherwise open September's plan and save over it.
   const openBudgetModal = () => {
+    const lines = overview?.hasBudget ? overview.categories : [];
+
     setBudgetForm({
-      month: budget?.month || getDefaultMonth(),
-      // A new budget starts from what income actually supports; an existing
-      // one keeps whatever the user already set.
+      month: overview?.month || budget?.month || getDefaultMonth(),
+
+      // A new plan starts from what income actually supports; an existing one
+      // keeps whatever the user already set.
       totalBudget:
-        budget?.totalBudget || planning?.suggestedTotalBudget || "",
+        overview?.totalBudget || planning?.suggestedTotalBudget || "",
+
       categories:
-        budget?.categories?.length > 0
-          ? budget.categories.map((item) => ({
+        lines.length > 0
+          ? lines.map((item) => ({
               uid: nextCategoryRowId(),
               name: item.name || "",
               limit: item.limit || "",
@@ -523,8 +554,12 @@ export default function Budget() {
       // UPDATE EXISTING BUDGET
       // -------------------------
 
-      if (budget?._id) {
-        await updateBudget(budget._id, payload);
+      // The id for the month on screen. Falling back to `budget._id` would
+      // update a different month whenever the navigator had moved.
+      const editingId = overview?.hasBudget ? overview.budgetId : null;
+
+      if (editingId) {
+        await updateBudget(editingId, payload);
 
         toast.success("Budget updated successfully.");
       }
@@ -634,14 +669,14 @@ export default function Budget() {
   // =========================
 
   const saveAdjustedCategories = async (nextCategories, successMessage) => {
-    if (!budget?._id) return;
+    if (!overview?.budgetId) return;
 
     try {
       setApplying(true);
 
-      await updateBudget(budget._id, {
-        month: budget.month,
-        totalBudget: budget.totalBudget,
+      await updateBudget(overview.budgetId, {
+        month: overview.month,
+        totalBudget: overview.totalBudget,
         categories: nextCategories,
       });
 
@@ -659,13 +694,60 @@ export default function Budget() {
     }
   };
 
+  const handleSaveRule = async (rule) => {
+    if (!overview?.budgetId) return;
+
+    try {
+      setApplying(true);
+
+      await updateBudget(overview.budgetId, {
+        month: overview.month,
+        totalBudget: overview.totalBudget,
+        categories: overview?.categories || [],
+        allocationRule: rule,
+      });
+
+      toast.success("Split updated");
+
+      await loadOverview(undefined, monthKey);
+    } catch (error) {
+      console.error(error);
+
+      toast.error(error?.response?.data?.message || "Could not save the split");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  // Starting a month from the one before it, rather than from a blank form.
+  const startFromPreviousMonth = () => {
+    const previous = overview?.previousMonth;
+
+    if (!previous) return;
+
+    setBudgetForm({
+      month: overview.month,
+      totalBudget: previous.totalBudget || "",
+      categories: previous.categories.map((item) => ({
+        uid: nextCategoryRowId(),
+        name: item.name,
+        limit: item.limit,
+        accountId: item.accountId || "",
+        type: item.type || "Expense",
+        group: item.group || null,
+      })),
+    });
+
+    setShowModal(true);
+  };
+
   const handleApplyProposal = (proposal) => {
     const cuts = new Map(
       (proposal.changes || []).map((change) => [change.name, change.to]),
     );
 
     saveAdjustedCategories(
-      (budget.categories || []).map((category) =>
+      (overview?.categories || []).map((category) =>
         cuts.has(category.name)
           ? { ...category, limit: cuts.get(category.name) }
           : category,
@@ -676,7 +758,7 @@ export default function Budget() {
 
   const handleCoverOverspend = ({ target, source, amount }) => {
     saveAdjustedCategories(
-      (budget.categories || []).map((category) => {
+      (overview?.categories || []).map((category) => {
         if (category.name === target) {
           return { ...category, limit: Number(category.limit || 0) + amount };
         }
@@ -699,7 +781,7 @@ export default function Budget() {
   const handleAdoptCategory = (item) => {
     saveAdjustedCategories(
       [
-        ...(budget.categories || []),
+        ...(overview?.categories || []),
         {
           name: item.name,
           limit: Math.ceil(item.spent),
@@ -751,18 +833,80 @@ export default function Budget() {
         </div>
       </motion.div>
 
+      {/* Which month is on screen, and what kind of month it is. */}
+      {monthKey && (
+        <div className="mb-6">
+          <MonthNavigator
+            monthKey={monthKey}
+            months={months}
+            currentKey={currentKey}
+            onSelect={selectMonth}
+          />
+        </div>
+      )}
+
       {/* The month measured against the plan. Leads the page: what actually
-          happened matters more than the form that set it up. */}
+          happened matters more than the form that set it up.
+
+          A past month is history - its actions are withheld rather than
+          disabled, because rebalancing a finished month is meaningless. */}
       {overview?.hasBudget && (
-        <div className="mb-8">
+        <div className="mb-8 space-y-5">
           <BudgetOverview
             overview={overview}
             busy={applying}
-            onApplyProposal={handleApplyProposal}
-            onCoverOverspend={handleCoverOverspend}
-            onAdoptCategory={handleAdoptCategory}
-            onEditPlan={openBudgetModal}
+            onApplyProposal={overview.isPast ? undefined : handleApplyProposal}
+            onCoverOverspend={overview.isPast ? undefined : handleCoverOverspend}
+            onAdoptCategory={overview.isPast ? undefined : handleAdoptCategory}
+            onEditPlan={overview.isPast ? undefined : openBudgetModal}
           />
+
+          <AllocationRuleEditor
+            // Remounts per month, so switching months re-seeds the draft
+            // without an effect that could clobber an edit in progress.
+            key={monthKey}
+            rule={overview.rule}
+            totalBudget={overview.totalBudget}
+            readOnly={overview.isPast}
+            busy={applying}
+            onSave={handleSaveRule}
+          />
+        </div>
+      )}
+
+      {/* A month with no plan yet. Offering last month's is the difference
+          between "set a budget every month" being a chore and a tap. */}
+      {overview && !overview.hasBudget && (
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-6 text-center">
+          <p className="text-lg font-semibold">
+            No plan for {overview.month} yet
+          </p>
+
+          <p className="mt-1 text-sm text-slate-400">
+            {overview.isPast
+              ? "This month finished without a budget, so there is nothing to measure against."
+              : overview.isFuture
+                ? "Plan ahead — you can set this up before the month starts."
+                : "Set one up to start tracking this month."}
+          </p>
+
+          {!overview.isPast && (
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {overview.previousMonth && (
+                <Button variant="primary" onClick={startFromPreviousMonth}>
+                  Start from {overview.previousMonth.month}
+                </Button>
+              )}
+
+              <Button
+                variant={overview.previousMonth ? "secondary" : "primary"}
+                icon={FiPlus}
+                onClick={openBudgetModal}
+              >
+                Build from scratch
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
