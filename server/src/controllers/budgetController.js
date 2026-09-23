@@ -11,9 +11,10 @@ import {
   loadDecoratedSchedules,
 } from "./scheduleController.js";
 import { decorateObligation } from "./obligationController.js";
-import { buildSpendable } from "../helpers/spendable.js";
+import { buildSpendable, isCashType } from "../helpers/spendable.js";
 import { startOfDay } from "../helpers/dates.js";
 import {
+  buildAccountRequirements,
   buildBudgetPlan,
   keyForBudget,
   monthKeyOf,
@@ -478,6 +479,17 @@ export const getBudgetOverview = async (req, res) => {
         dailyLimit: budget?.dailyLimit || 0,
         weeklyLimit: budget?.weeklyLimit || 0,
         proposal: proposeFitToCash(plan),
+
+        // What each account has to hold for the plan to be fundable, and
+        // where a shortfall could come from. Only meaningful for a month
+        // still to be spent - a finished month's balances have moved on.
+        bankFunding: isPast
+          ? null
+          : buildAccountRequirements({
+              categories: plan.categories,
+              accounts,
+              isCashType,
+            }),
       },
     });
   } catch (error) {

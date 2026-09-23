@@ -27,6 +27,7 @@ import { getAccountsByUser } from "../services/accountService";
 import { useEffect, useState } from "react";
 import { getExpensesByUser } from "../services/expenseService";
 import { getUserId } from "../utils/auth";
+import { createTransfer } from "../services/transferService";
 
 import Button from "../components/common/Button";
 import Input, { Select } from "../components/common/Input";
@@ -38,6 +39,9 @@ import { moveItem } from "../utils/reorder";
 import BudgetOverview from "../components/common/BudgetOverview";
 import MonthNavigator from "../components/common/MonthNavigator";
 import AllocationRuleEditor from "../components/common/AllocationRuleEditor";
+import BankFundingPanel, {
+  FundBankDialog,
+} from "../components/common/BankFundingPanel";
 import { useDragReorder } from "../utils/dragReorder";
 import { money } from "../utils/incomeFormulas";
 
@@ -106,6 +110,9 @@ export default function Budget() {
 
   // Which month is on screen. Null until the first load names it, so the
   // page never guesses a month the server might disagree about.
+  // The bank whose shortfall is being funded, if any.
+  const [fundingBank, setFundingBank] = useState(null);
+
   const [monthKey, setMonthKey] = useState(null);
   const [months, setMonths] = useState([]);
   const [currentKey, setCurrentKey] = useState(null);
@@ -741,6 +748,38 @@ export default function Budget() {
     setShowModal(true);
   };
 
+  // Moving money into a bank that is short of what its budget lines need.
+  // This is a real transfer: both balances move, and it lands in the ledger
+  // as "moved, not spent" rather than as spending.
+  const handleFundBank = async ({ fromAccountId, toAccountId, amount }) => {
+    try {
+      setApplying(true);
+
+      await createTransfer({
+        userId: getUserId(),
+        fromAccountId,
+        toAccountId,
+        amount: Number(amount),
+        note: `Funding ${overview?.month || "this month"} budget`,
+        transferDate: new Date(),
+      });
+
+      toast.success(`${money(amount)} moved into ${fundingBank?.name}`);
+
+      setFundingBank(null);
+
+      await loadOverview(undefined, monthKey);
+    } catch (error) {
+      console.error(error);
+
+      toast.error(
+        error?.response?.data?.message || "Could not move the money",
+      );
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const handleApplyProposal = (proposal) => {
     const cuts = new Map(
       (proposal.changes || []).map((change) => [change.name, change.to]),
@@ -859,6 +898,14 @@ export default function Budget() {
             onCoverOverspend={overview.isPast ? undefined : handleCoverOverspend}
             onAdoptCategory={overview.isPast ? undefined : handleAdoptCategory}
             onEditPlan={overview.isPast ? undefined : openBudgetModal}
+          />
+
+          {/* What each account must be holding for the plan to work, and a
+              way to move money into one that is short. */}
+          <BankFundingPanel
+            funding={overview.bankFunding}
+            busy={applying}
+            onFund={overview.isPast ? undefined : setFundingBank}
           />
 
           <AllocationRuleEditor
@@ -1038,6 +1085,21 @@ export default function Budget() {
             : `Remaining budget: ${money(overview?.totals?.remaining ?? remaining)}`}
         </p>
       </motion.div>
+
+      <Modal
+        isOpen={Boolean(fundingBank)}
+        onClose={() => (applying ? null : setFundingBank(null))}
+        title="Move money in"
+        maxWidth="max-w-md"
+      >
+        <FundBankDialog
+          bank={fundingBank}
+          donors={overview?.bankFunding?.donors || []}
+          busy={applying}
+          onClose={() => setFundingBank(null)}
+          onConfirm={handleFundBank}
+        />
+      </Modal>
 
       {/* =========================
           BUDGET MODAL

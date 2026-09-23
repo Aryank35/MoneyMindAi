@@ -381,3 +381,130 @@ export const applyRule = (totalBudget, rule = DEFAULT_RULE) =>
 
     return acc;
   }, {});
+
+// =========================================================================
+// WHAT EACH BANK NEEDS TO HOLD
+//
+// Categories carry the account that funds them, so a plan implies a required
+// balance per account. Three rules decide it:
+//
+//   1. What is REMAINING is what is required. A line with a 5,000 limit and
+//      3,000 already spent needs 2,000 sitting there, not 5,000 - the spent
+//      part has already left.
+//
+//   2. A card-funded line asks nothing of a bank. Spending on credit and
+//      settling the card later is a different movement; the card's own
+//      outstanding is already reserved against cash elsewhere.
+//
+//   3. A line with no account assigned cannot be demanded of any bank. It is
+//      surfaced rather than spread around, because guessing which account
+//      should hold it would invent a shortfall that may not exist.
+// =========================================================================
+
+export const buildAccountRequirements = ({
+  categories = [],
+  accounts = [],
+  isCashType = () => true,
+}) => {
+  const byId = new Map(accounts.map((account) => [String(account._id), account]));
+
+  const required = new Map();
+
+  const unassigned = [];
+
+  const onCards = [];
+
+  for (const line of categories) {
+    // Rule 1.
+    const need = Math.max(Number(line.remaining || 0), 0);
+
+    if (need <= 0) continue;
+
+    const id = line.accountId ? String(line.accountId) : "";
+
+    const account = id ? byId.get(id) : null;
+
+    if (!account) {
+      // Rule 3. Includes a category pointing at an account since deleted.
+      unassigned.push({ name: line.name, required: need, group: line.group });
+
+      continue;
+    }
+
+    // Rule 2.
+    if (!isCashType(account.type)) {
+      onCards.push({
+        name: line.name,
+        required: need,
+        group: line.group,
+        accountName: account.name,
+        accountType: account.type,
+      });
+
+      continue;
+    }
+
+    const entry = required.get(id) || {
+      accountId: id,
+      name: account.name,
+      type: account.type,
+      icon: account.icon,
+      balance: Number(account.balance || 0),
+      required: 0,
+      lines: [],
+    };
+
+    entry.required += need;
+    entry.lines.push({ name: line.name, required: need, group: line.group });
+
+    required.set(id, entry);
+  }
+
+  const banks = [...required.values()]
+    .map((entry) => ({
+      ...entry,
+      shortfall: Math.max(entry.required - entry.balance, 0),
+      surplus: Math.max(entry.balance - entry.required, 0),
+      // Allowed past 100: an account holding less than its plan needs is
+      // exactly what this panel exists to show.
+      coverage:
+        entry.required > 0
+          ? Math.round((entry.balance / entry.required) * 100)
+          : 100,
+      lines: entry.lines.sort((a, b) => b.required - a.required),
+    }))
+    .sort((a, b) => b.shortfall - a.shortfall || b.required - a.required);
+
+  // Accounts holding money that no category has claimed - the places a
+  // shortfall can be funded from without disturbing another plan line.
+  const donors = accounts
+    .filter((account) => isCashType(account.type))
+    .map((account) => {
+      const claimed = required.get(String(account._id))?.required || 0;
+
+      return {
+        accountId: String(account._id),
+        name: account.name,
+        icon: account.icon,
+        balance: Number(account.balance || 0),
+        claimed,
+        spare: Math.max(Number(account.balance || 0) - claimed, 0),
+      };
+    })
+    .filter((account) => account.spare > 0)
+    .sort((a, b) => b.spare - a.spare);
+
+  return {
+    banks,
+    donors,
+    unassigned: unassigned.sort((a, b) => b.required - a.required),
+    onCards: onCards.sort((a, b) => b.required - a.required),
+
+    totals: {
+      required: banks.reduce((sum, bank) => sum + bank.required, 0),
+      shortfall: banks.reduce((sum, bank) => sum + bank.shortfall, 0),
+      unassigned: unassigned.reduce((sum, item) => sum + item.required, 0),
+      onCards: onCards.reduce((sum, item) => sum + item.required, 0),
+    },
+  };
+};
