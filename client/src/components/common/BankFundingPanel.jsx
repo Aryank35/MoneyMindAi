@@ -205,9 +205,9 @@ export function FundBankDialog({ bank, donors = [], onConfirm, onClose, busy }) 
           <FiAlertTriangle className="mt-0.5 shrink-0" />
 
           <span>
-            No other account has money to spare — every one is already carrying
-            what its own plan lines need. Trimming the plan is the honest fix
-            here, not moving money around.
+            No account has money to spare. Either each is already carrying what
+            its own plan lines need, or it is not one you count as spendable.
+            Trimming the plan is the honest fix here, not moving money around.
           </span>
         </p>
       ) : (
@@ -270,7 +270,8 @@ export function FundBankDialog({ bank, donors = [], onConfirm, onClose, busy }) 
 
           <p className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-slate-400">
             This records a real transfer between your accounts and moves both
-            balances.
+            balances. Only accounts you count as spendable are offered — money
+            set aside in EPF, pots or investments is left alone.
           </p>
         </>
       )}

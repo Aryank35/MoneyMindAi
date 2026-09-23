@@ -18,6 +18,7 @@ import Transfer from "../pages/Transfer";
 import Cards from "../pages/Cards";
 import Planner from "../pages/Planner";
 import Events from "../pages/Events";
+import Notes from "../pages/Notes";
 import EventDetail from "../pages/EventDetail";
 import { getToken } from "../utils/auth";
 
@@ -48,6 +49,7 @@ const PROTECTED = [
   { path: "/transfer", element: <Transfer /> },
   { path: "/planner", element: <Planner /> },
   { path: "/events", element: <Events /> },
+  { path: "/notes", element: <Notes /> },
   // The workspace for one event. Everything about it - budget, spending,
   // tasks, notes and files - lives behind this single route.
   { path: "/events/:id", element: <EventDetail /> },

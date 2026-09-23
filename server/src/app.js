@@ -14,6 +14,7 @@ import investmentRoutes from "./routes/investmentRoutes.js";
 import scheduleRoutes from "./routes/scheduleRoutes.js";
 import obligationRoutes from "./routes/obligationRoutes.js";
 import splitRoutes from "./routes/splitRoutes.js";
+import noteRoutes from "./routes/noteRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 
 const app = express();
@@ -47,6 +48,8 @@ app.use("/api/obligations", obligationRoutes);
 app.use("/api/splits", splitRoutes);
 
 app.use("/api/events", eventRoutes);
+
+app.use("/api/notes", noteRoutes);
 
 // Cheap liveness probe: no database work, so the client can use it both to
 // detect whether the API is reachable and to wake a sleeping instance

@@ -405,6 +405,12 @@ export const buildAccountRequirements = ({
   categories = [],
   accounts = [],
   isCashType = () => true,
+  // Whether an account may be drawn FROM. Deliberately separate from
+  // isCashType: a bank still needs the money its budget lines ask for even
+  // when the user has excluded it from spendable money, but an account they
+  // have excluded must never be offered up as a source. Defaults to the type
+  // check so this stays usable on its own.
+  canFund = (account) => isCashType(account.type),
 }) => {
   const byId = new Map(accounts.map((account) => [String(account._id), account]));
 
@@ -477,8 +483,11 @@ export const buildAccountRequirements = ({
 
   // Accounts holding money that no category has claimed - the places a
   // shortfall can be funded from without disturbing another plan line.
+  // Only accounts the user counts as spendable appear here: offering money
+  // from one they have deliberately set aside - an EPF balance, a pot - is
+  // exactly the kind of "helpful" suggestion that empties a savings account.
   const donors = accounts
-    .filter((account) => isCashType(account.type))
+    .filter((account) => canFund(account))
     .map((account) => {
       const claimed = required.get(String(account._id))?.required || 0;
 

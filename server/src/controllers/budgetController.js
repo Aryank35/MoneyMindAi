@@ -11,7 +11,11 @@ import {
   loadDecoratedSchedules,
 } from "./scheduleController.js";
 import { decorateObligation } from "./obligationController.js";
-import { buildSpendable, isCashType } from "../helpers/spendable.js";
+import {
+  buildSpendable,
+  countsAsSpendable,
+  isCashType,
+} from "../helpers/spendable.js";
 import { startOfDay } from "../helpers/dates.js";
 import {
   buildAccountRequirements,
@@ -489,6 +493,9 @@ export const getBudgetOverview = async (req, res) => {
               categories: plan.categories,
               accounts,
               isCashType,
+              // Honours the account selection made on "money left to spend",
+              // so the two never disagree about what is yours to move.
+              canFund: countsAsSpendable,
             }),
       },
     });

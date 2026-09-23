@@ -13,6 +13,7 @@ import {
   FiPieChart,
   FiDivide,
   FiMap,
+  FiCheckSquare,
 } from "react-icons/fi";
 
 export const SIDEBAR_MENU = [
@@ -20,6 +21,11 @@ export const SIDEBAR_MENU = [
     label: "Dashboard",
     path: "/dashboard",
     icon: FiHome,
+  },
+  {
+    label: "Notes",
+    path: "/notes",
+    icon: FiCheckSquare,
   },
   {
     label: "Expenses",
