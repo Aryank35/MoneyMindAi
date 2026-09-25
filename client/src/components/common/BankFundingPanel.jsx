@@ -7,6 +7,8 @@ import {
   FiHelpCircle,
 } from "react-icons/fi";
 
+import AmountInput from "./AmountInput";
+import { amountOf } from "../../utils/calc";
 import { money } from "../../utils/incomeFormulas";
 
 // =========================================================================
@@ -181,7 +183,7 @@ export function FundBankDialog({ bank, donors = [], onConfirm, onClose, busy }) 
 
   const source = donors.find((donor) => donor.accountId === sourceId);
 
-  const value = Number(amount) || 0;
+  const value = amountOf(amount);
 
   // A transfer that empties the source past what it can spare just moves the
   // shortfall somewhere else, so it is blocked rather than merely warned.
@@ -243,21 +245,11 @@ export function FundBankDialog({ bank, donors = [], onConfirm, onClose, busy }) 
           </div>
 
           <div>
-            <label
-              htmlFor="fund-amount"
-              className="mb-1.5 block text-sm text-slate-400"
-            >
-              Amount
-            </label>
-
-            <input
+            <AmountInput
               id="fund-amount"
-              type="number"
-              min="0"
-              inputMode="numeric"
+              label="Amount"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-800 p-3 outline-none transition-colors focus:border-indigo-500"
             />
 
             {tooMuch && (

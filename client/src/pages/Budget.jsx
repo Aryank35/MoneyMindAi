@@ -1,4 +1,6 @@
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AmountInput from "../components/common/AmountInput";
+import { amountOf } from "../utils/calc";
 import {
   FiPlus,
   FiAlertTriangle,
@@ -7,9 +9,8 @@ import {
   FiX,
   FiChevronUp,
   FiChevronDown,
-  FiMenu,
 } from "react-icons/fi";
-import { motion } from "framer-motion";
+import { motion, Reorder } from "framer-motion";
 import { Link } from "react-router-dom";
 
 import {
@@ -37,12 +38,12 @@ import { useToast } from "../components/common/Toast";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import { moveItem } from "../utils/reorder";
 import BudgetOverview from "../components/common/BudgetOverview";
+import SortableRow from "../components/common/SortableRow";
 import MonthNavigator from "../components/common/MonthNavigator";
 import AllocationRuleEditor from "../components/common/AllocationRuleEditor";
 import BankFundingPanel, {
   FundBankDialog,
 } from "../components/common/BankFundingPanel";
-import { useDragReorder } from "../utils/dragReorder";
 import { money } from "../utils/incomeFormulas";
 
 // =========================
@@ -152,13 +153,9 @@ export default function Budget() {
   const setCategoryOrder = (categories) =>
     setBudgetForm((prev) => ({ ...prev, categories }));
 
-  // Dragging is the desktop gesture; the arrows on each row stay the way to
-  // reorder by touch and keyboard, since HTML5 drag events never fire on a
-  // touchscreen.
-  const categoryDrag = useDragReorder({
-    items: budgetForm.categories,
-    onReorder: setCategoryOrder,
-  });
+  // Dragging now runs through SortableRow (pointer events, live reorder), so
+  // it works on touch too. The arrows on each row stay as the keyboard and
+  // precise-nudge path.
 
   const handleAddCategory = () => {
     setBudgetForm((prev) => ({
@@ -177,7 +174,7 @@ export default function Budget() {
   // Only asks when there is something to lose - blank rows just go.
   const handleRemoveCategory = (index) => {
     const category = budgetForm.categories[index];
-    const isEmpty = !category?.name?.trim() && !Number(category?.limit);
+    const isEmpty = !category?.name?.trim() && !amountOf(category?.limit);
 
     if (isEmpty) {
       removeCategoryAt(index);
@@ -457,7 +454,7 @@ export default function Budget() {
       // TOTAL BUDGET VALIDATION
       // -------------------------
 
-      const totalBudgetValue = Number(budgetForm.totalBudget);
+      const totalBudgetValue = amountOf(budgetForm.totalBudget);
 
       if (!Number.isFinite(totalBudgetValue) || totalBudgetValue <= 0) {
         toast.error("Please enter a valid total budget greater than 0.");
@@ -469,10 +466,10 @@ export default function Budget() {
       // -------------------------
 
       const cleanedCategories = budgetForm.categories
-        .filter((item) => item?.name?.trim() && Number(item.limit) > 0)
+        .filter((item) => item?.name?.trim() && amountOf(item.limit) > 0)
         .map((item) => ({
           name: item.name.trim(),
-          limit: Number(item.limit),
+          limit: amountOf(item.limit),
           accountId: item.accountId,
           type: item.type || "Expense",
           group: item.group || null,
@@ -503,7 +500,7 @@ export default function Budget() {
       // -------------------------
 
       const totalCategoryLimit = cleanedCategories.reduce(
-        (sum, item) => sum + Number(item.limit || 0),
+        (sum, item) => sum + amountOf(item.limit),
         0,
       );
 
@@ -661,12 +658,12 @@ export default function Budget() {
   // Drives the live warning inside the edit form, so it reads the form state
   // rather than the saved budget.
   const totalCategoryLimit = budgetForm.categories.reduce(
-    (sum, item) => sum + Number(item.limit || 0),
+    (sum, item) => sum + amountOf(item.limit),
     0,
   );
 
   const isBudgetExceeded =
-    totalCategoryLimit > Number(budgetForm.totalBudget || 0);
+    totalCategoryLimit > amountOf(budgetForm.totalBudget);
 
   // =========================
   // PLAN ADJUSTMENTS
@@ -1130,8 +1127,7 @@ export default function Budget() {
           />
 
           <div>
-            <Input
-              type="number"
+            <AmountInput
               label="Total Budget"
               id="budget-total"
               placeholder="Total Budget"
@@ -1149,7 +1145,7 @@ export default function Budget() {
                 <span className="text-slate-500">
                   {money(budgetableIncome)} of income available.
                 </span>
-                {Number(budgetForm.totalBudget || 0) !== budgetableIncome && (
+                {amountOf(budgetForm.totalBudget) !== budgetableIncome && (
                   <button
                     type="button"
                     onClick={() =>
@@ -1167,11 +1163,11 @@ export default function Budget() {
             )}
 
             {budgetableIncome > 0 &&
-              Number(budgetForm.totalBudget || 0) > budgetableIncome && (
+              amountOf(budgetForm.totalBudget) > budgetableIncome && (
                 <p className="mt-2 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-200">
                   <FiAlertTriangle className="mt-0.5 shrink-0" />
                   {money(
-                    Number(budgetForm.totalBudget) - budgetableIncome,
+                    amountOf(budgetForm.totalBudget) - budgetableIncome,
                   )}{" "}
                   more than your recorded income. You can still save this.
                 </p>
@@ -1181,30 +1177,23 @@ export default function Budget() {
 
         {/* Categories */}
 
-        <div className="space-y-4">
+        {/* Reorder.Group reports the new order continuously while dragging,
+            not once on drop, which is what lets the other rows move out of
+            the way as you go. */}
+        <Reorder.Group
+          axis="y"
+          as="div"
+          values={budgetForm.categories}
+          onReorder={setCategoryOrder}
+          className="space-y-4"
+        >
           {budgetForm.categories.map((category, index) => (
-            <div
+            <SortableRow
               key={category.uid}
-              {...categoryDrag.rowProps(index)}
-              className={`flex items-start gap-2 rounded-2xl border bg-slate-800/40 p-4 transition ${
-                categoryDrag.isDragging(index)
-                  ? "border-indigo-400/50 opacity-50"
-                  : categoryDrag.isOver(index)
-                    ? "border-indigo-400/50"
-                    : "border-white/5"
-              }`}
+              value={category}
+              className="flex items-start gap-2 rounded-2xl border border-white/5 bg-slate-800/40 p-4"
+              handleClassName="pt-3"
             >
-              {/* Grip. Hidden on a phone, where drag events never fire and
-                  the arrows below are the way to reorder. */}
-              <span
-                {...categoryDrag.handleProps(index)}
-                title="Drag to reorder"
-                aria-hidden="true"
-                className="hidden shrink-0 cursor-grab pt-3 text-slate-500 active:cursor-grabbing sm:block"
-              >
-                <FiMenu />
-              </span>
-
               <div className="grid min-w-0 flex-1 grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                 {/* Category */}
 
@@ -1220,8 +1209,8 @@ export default function Budget() {
 
                 {/* Limit */}
 
-                <Input
-                  type="number"
+                <AmountInput
+                  label=""
                   aria-label="Category budget limit"
                   placeholder="Budget"
                   value={category.limit}
@@ -1307,9 +1296,11 @@ export default function Budget() {
                   </div>
                 </div>
               </div>
-            </div>
+            </SortableRow>
           ))}
+        </Reorder.Group>
 
+        <div className="mt-4">
           {/* Add Category */}
 
           <button
@@ -1329,7 +1320,7 @@ export default function Budget() {
 
             <span>
               ₹{totalCategoryLimit.toLocaleString()}
-              {" / "}₹{Number(budgetForm.totalBudget || 0).toLocaleString()}
+              {" / "}₹{amountOf(budgetForm.totalBudget).toLocaleString()}
             </span>
           </div>
 
@@ -1341,8 +1332,8 @@ export default function Budget() {
               style={{
                 width: `${Math.min(
                   100,
-                  Number(budgetForm.totalBudget) > 0
-                    ? (totalCategoryLimit / Number(budgetForm.totalBudget)) *
+                  amountOf(budgetForm.totalBudget) > 0
+                    ? (totalCategoryLimit / amountOf(budgetForm.totalBudget)) *
                         100
                     : 0,
                 )}%`,

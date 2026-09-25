@@ -13,6 +13,8 @@ import {
 } from "react-icons/fi";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AmountInput from "../components/common/AmountInput";
+import { amountOf } from "../utils/calc";
 import Modal from "../components/common/Modal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import Button from "../components/common/Button";
@@ -183,7 +185,7 @@ export default function Pots() {
       return;
     }
 
-    if (!(Number(form.targetAmount) > 0)) {
+    if (!(amountOf(form.targetAmount) > 0)) {
       toast.error("Target must be greater than 0");
       return;
     }
@@ -191,7 +193,7 @@ export default function Pots() {
     try {
       setSaving(true);
 
-      const payload = { ...form, userId: getUserId(), targetAmount: Number(form.targetAmount) };
+      const payload = { ...form, userId: getUserId(), targetAmount: amountOf(form.targetAmount) };
 
       if (editing) {
         await updatePot(editing._id, payload);
@@ -227,7 +229,7 @@ export default function Pots() {
   };
 
   const handleMove = async () => {
-    const amount = Number(moveForm.amount);
+    const amount = amountOf(moveForm.amount);
 
     if (!(amount > 0)) {
       toast.error("Enter an amount greater than 0");
@@ -627,9 +629,8 @@ export default function Pots() {
             onChange={(e) => setForm({ ...form, itemName: e.target.value })}
           />
 
-          <Input
+          <AmountInput
             label="Target amount"
-            type="number"
             value={form.targetAmount}
             onChange={(e) => setForm({ ...form, targetAmount: e.target.value })}
           />
@@ -764,9 +765,8 @@ export default function Pots() {
           />
         ) : (
           <>
-            <Input
+            <AmountInput
               label="Amount"
-              type="number"
               value={moveForm.amount}
               onChange={(e) =>
                 setMoveForm({ ...moveForm, amount: e.target.value })
@@ -818,7 +818,7 @@ export default function Pots() {
 
             {moveMode === "fund" &&
               moveAccount &&
-              Number(moveForm.amount) > Number(moveAccount.balance) && (
+              amountOf(moveForm.amount) > Number(moveAccount.balance) && (
                 <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-200">
                   <FiAlertTriangle className="mt-0.5 shrink-0" />
                   More than {moveAccount.name} holds ({money(moveAccount.balance)}).

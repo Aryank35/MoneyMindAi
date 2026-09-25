@@ -3,6 +3,8 @@ import Account from "../models/Account.js";
 import { deductBalance, addBalance } from "../helpers/accountBalance.js";
 import { daysBetween } from "../helpers/dates.js";
 import { getDueStatus } from "../helpers/due.js";
+import Split from "../models/Split.js";
+import { buildPeopleBalances } from "../helpers/peopleBalances.js";
 
 // =========================================================================
 // HELPERS
@@ -412,6 +414,37 @@ export const getObligationOverview = async (req, res) => {
           .sort((a, b) => Math.abs(b.net) - Math.abs(a.net)),
       },
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// =========================================================================
+// WHO OWES WHOM
+//
+// Loans and split shares netted per person. Served from here because
+// obligations are the larger half, but it is the same answer the Splits page
+// asks for - deriving it twice is how the two would end up disagreeing about
+// what someone owes.
+// =========================================================================
+
+export const getPeopleBalances = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [obligations, splits] = await Promise.all([
+      Obligation.find({ userId }),
+      Split.find({ userId }),
+    ]);
+
+    const data = buildPeopleBalances({
+      obligations: obligations.map((item) => decorateObligation(item)),
+      splits: splits.map((split) =>
+        split.toObject ? split.toObject() : split,
+      ),
+    });
+
+    res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -44,14 +44,14 @@ const unitPriced = (key, label, icon, opts = {}) => ({
     {
       key: "avgBuyPrice",
       label: opts.buyLabel || "Average Buy Price",
-      type: "number",
+      type: "money",
       required: true,
       step: "any",
     },
     {
       key: "currentPrice",
       label: opts.currentLabel || "Current Price",
-      type: "number",
+      type: "money",
       required: true,
       step: "any",
       help: "Update this as the price moves.",
@@ -131,7 +131,7 @@ export const INVESTMENT_TYPES = [
       {
         key: "principal",
         label: "Principal",
-        type: "number",
+        type: "money",
         required: true,
       },
       {
@@ -196,7 +196,7 @@ export const INVESTMENT_TYPES = [
       {
         key: "monthlyAmount",
         label: "Monthly Deposit",
-        type: "number",
+        type: "money",
         required: true,
       },
       {
@@ -423,13 +423,13 @@ export const INVESTMENT_TYPES = [
       {
         key: "purchasePrice",
         label: "Purchase Price",
-        type: "number",
+        type: "money",
         required: true,
       },
       {
         key: "currentValue",
         label: "Estimated Value Today",
-        type: "number",
+        type: "money",
         required: true,
       },
     ],
@@ -450,13 +450,13 @@ export const INVESTMENT_TYPES = [
       {
         key: "investedAmount",
         label: "Amount Invested",
-        type: "number",
+        type: "money",
         required: true,
       },
       {
         key: "currentValue",
         label: "Current Value",
-        type: "number",
+        type: "money",
         required: true,
       },
     ],

@@ -8,7 +8,6 @@ import Budget from "../pages/Budget";
 import Pots from "../pages/Pots";
 import Lending from "../pages/Lending";
 import Splits from "../pages/Splits";
-import Calculator from "../pages/Calculator";
 import Investments from "../pages/Investments";
 import ProtectedRoute from "./ProtectedRoute";
 import Analytics from "../pages/Analytics";
@@ -41,7 +40,6 @@ const PROTECTED = [
   { path: "/pots", element: <Pots /> },
   { path: "/lending", element: <Lending /> },
   { path: "/splits", element: <Splits /> },
-  { path: "/calculator", element: <Calculator /> },
   { path: "/investments", element: <Investments /> },
   { path: "/analytics", element: <Analytics /> },
   { path: "/accounts", element: <Accounts /> },
@@ -69,6 +67,10 @@ export default function AppRoutes() {
 
         {/* The wishlist became a funded pot; keep the old path working. */}
         <Route path="/wishlist" element={<Navigate to="/pots" replace />} />
+
+        {/* The calculator became part of every amount field rather than a
+            page of its own. An installed app may still hold the old link. */}
+        <Route path="/calculator" element={<Navigate to="/dashboard" replace />} />
 
         {PROTECTED.map((route) => (
           <Route

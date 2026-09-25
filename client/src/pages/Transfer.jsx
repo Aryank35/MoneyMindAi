@@ -12,6 +12,8 @@ import {
 } from "react-icons/fi";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AmountInput from "../components/common/AmountInput";
+import { evaluateExpression } from "../utils/calc";
 import { getAccountsByUser } from "../services/accountService";
 
 import {
@@ -100,7 +102,10 @@ export default function Transfer() {
     (account) => account._id === formData.toAccount,
   );
 
-  const amountValue = Number(formData.amount || 0);
+  // The field takes arithmetic and hands out a calculator, so the figure is
+  // whatever the expression resolves to rather than the raw string.
+  const parsedAmount = evaluateExpression(formData.amount);
+  const amountValue = parsedAmount.value || 0;
 
   // While editing, the live balances still carry the original transfer. The
   // server reverses it before applying the new one, so the preview - and the
@@ -146,6 +151,12 @@ export default function Transfer() {
 
       if (formData.fromAccount === formData.toAccount) {
         toast.error("Source and destination accounts must be different");
+
+        return;
+      }
+
+      if (parsedAmount.error) {
+        toast.error(parsedAmount.error);
 
         return;
       }
@@ -507,22 +518,14 @@ export default function Transfer() {
         </div>
 
         <div className="grid md:grid-cols-3 gap-4 mt-6">
-          <div>
-            <label htmlFor="transfer-amount" className="block mb-2 text-slate-400">
-              Amount
-            </label>
-
-            <input
-              id="transfer-amount"
-              type="number"
-              placeholder="Amount"
-              value={formData.amount}
-              onChange={(e) =>
-                setFormData({ ...formData, amount: e.target.value })
-              }
-              className="w-full bg-slate-800 rounded-xl p-3 outline-none border border-slate-700 focus:border-indigo-500"
-            />
-          </div>
+          <AmountInput
+            id="transfer-amount"
+            label="Amount"
+            value={formData.amount}
+            onChange={(e) =>
+              setFormData({ ...formData, amount: e.target.value })
+            }
+          />
 
           <div>
             <label htmlFor="transfer-note" className="block mb-2 text-slate-400">

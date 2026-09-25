@@ -20,6 +20,8 @@ import {
 } from "recharts";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AmountInput from "../components/common/AmountInput";
+import { amountOf } from "../utils/calc";
 import Modal from "../components/common/Modal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import Button from "../components/common/Button";
@@ -308,9 +310,20 @@ export default function Investments() {
         note: form.note,
         purchaseDate: form.purchaseDate,
         isSip: form.isSip,
-        sipAmount: form.sipAmount,
+        sipAmount: amountOf(form.sipAmount),
         sipDay: form.sipDay,
-        fields: form.fields,
+        // Money fields accept arithmetic, so they are resolved here rather
+        // than shipped as "500+200" for the server to choke on. Non-money
+        // fields are plain number inputs and pass straight through.
+        fields: Object.fromEntries(
+          Object.entries(form.fields).map(([key, value]) => [
+            key,
+            (activeType?.fields || []).find((field) => field.key === key)
+              ?.type === "money"
+              ? amountOf(value)
+              : value,
+          ]),
+        ),
       };
 
       if (editing) {
@@ -344,7 +357,7 @@ export default function Investments() {
   const handleValueUpdate = async () => {
     try {
       setSaving(true);
-      await updateInvestmentValue(valueTarget._id, Number(valueInput));
+      await updateInvestmentValue(valueTarget._id, amountOf(valueInput));
       toast.success(`${valueTarget.name} revalued`);
       setValueTarget(null);
       await loadPage();
@@ -871,25 +884,33 @@ export default function Investments() {
 
           {/* Type-specific fields */}
           <div className="mt-3 grid gap-3 md:grid-cols-3">
-            {(activeType?.fields || []).map((field) => (
-              <div key={field.key}>
-                <Input
-                  label={field.label + (field.required ? " *" : "")}
-                  type="number"
-                  step={field.step}
-                  value={form.fields[field.key] ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      fields: { ...form.fields, [field.key]: e.target.value },
-                    })
-                  }
-                />
-                {field.help && (
-                  <p className="mt-1 text-xs text-slate-500">{field.help}</p>
-                )}
-              </div>
-            ))}
+            {(activeType?.fields || []).map((field) => {
+              // The registry says which of its fields are rupees. Those get
+              // the calculator; units, grams, rates and tenures stay plain
+              // number inputs, where arithmetic would only be a nuisance.
+              const Field = field.type === "money" ? AmountInput : Input;
+
+              return (
+                <div key={field.key}>
+                  <Field
+                    label={field.label + (field.required ? " *" : "")}
+                    {...(field.type === "money"
+                      ? {}
+                      : { type: "number", step: field.step })}
+                    value={form.fields[field.key] ?? ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        fields: { ...form.fields, [field.key]: e.target.value },
+                      })
+                    }
+                  />
+                  {field.help && (
+                    <p className="mt-1 text-xs text-slate-500">{field.help}</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Derived preview */}
@@ -956,9 +977,8 @@ export default function Investments() {
 
             {form.isSip && (
               <>
-                <Input
+                <AmountInput
                   label="SIP Amount"
-                  type="number"
                   value={form.sipAmount}
                   onChange={(e) =>
                     setForm({ ...form, sipAmount: e.target.value })
@@ -1029,10 +1049,8 @@ export default function Investments() {
           title={valueTarget ? `Revalue ${valueTarget.name}` : "Update value"}
           maxWidth="max-w-md"
         >
-          <Input
+          <AmountInput
             label={valueFieldLabel}
-            type="number"
-            step="any"
             value={valueInput}
             onChange={(e) => setValueInput(e.target.value)}
           />

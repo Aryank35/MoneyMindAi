@@ -15,6 +15,8 @@ import {
 } from "react-icons/fi";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AmountInput from "../components/common/AmountInput";
+import { amountOf } from "../utils/calc";
 import Modal from "../components/common/Modal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import Button from "../components/common/Button";
@@ -255,7 +257,7 @@ export default function Planner() {
       return;
     }
 
-    if (!(Number(form.amount) > 0)) {
+    if (!(amountOf(form.amount) > 0)) {
       toast.error("Amount must be greater than 0");
       return;
     }
@@ -269,7 +271,7 @@ export default function Planner() {
         userId: getUserId(),
         kind: form.kind,
         name: form.name,
-        amount: Number(form.amount),
+        amount: amountOf(form.amount),
         isRecurring,
         recurrence: isRecurring
           ? { every: Number(form.every) || 1, unit: form.unit }
@@ -281,7 +283,13 @@ export default function Planner() {
         contributor: form.contributor,
         includeInBudget: form.includeInBudget,
         note: form.note,
-        policy: form.kind === "insurance" ? form.policy : undefined,
+        policy:
+          form.kind === "insurance"
+            ? // The whole policy object ships as it stands, so the one money
+              // field inside it has to be resolved here - everything else on
+              // it is text or a date.
+              { ...form.policy, coverAmount: amountOf(form.policy.coverAmount) }
+            : undefined,
       };
 
       if (editing) {
@@ -785,9 +793,8 @@ export default function Planner() {
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
 
-          <Input
+          <AmountInput
             label={isInsurance ? "Premium" : "Amount"}
-            type="number"
             value={form.amount}
             onChange={(e) => setForm({ ...form, amount: e.target.value })}
           />
@@ -928,9 +935,8 @@ export default function Planner() {
                   <option key={type}>{type}</option>
                 ))}
               </Select>
-              <Input
+              <AmountInput
                 label="Cover amount"
-                type="number"
                 value={form.policy.coverAmount}
                 onChange={(e) =>
                   setForm({

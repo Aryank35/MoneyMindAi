@@ -12,6 +12,8 @@ import {
 } from "react-icons/fi";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AmountInput from "../components/common/AmountInput";
+import { amountOf } from "../utils/calc";
 import Modal from "../components/common/Modal";
 import StatementModal from "../components/common/StatementModal";
 import Button from "../components/common/Button";
@@ -212,7 +214,7 @@ export default function Cards() {
 
       // Money already owed is entered as a positive figure; the ledger works
       // in negative balances.
-      const openingOutstanding = Math.abs(Number(cardForm.balance || 0));
+      const openingOutstanding = Math.abs(amountOf(cardForm.balance));
 
       const payload = {
         name: cardForm.name.trim(),
@@ -221,7 +223,7 @@ export default function Cards() {
           last4: cardForm.last4,
           network: cardForm.network,
           issuer: cardForm.issuer.trim(),
-          creditLimit: Number(cardForm.creditLimit || 0),
+          creditLimit: amountOf(cardForm.creditLimit),
           statementDay: Number(cardForm.statementDay),
           dueDay: Number(cardForm.dueDay),
           // Always sent: a `card` update replaces the whole subdocument, so
@@ -268,7 +270,7 @@ export default function Cards() {
   };
 
   const handlePay = async () => {
-    const amount = Number(payForm.amount);
+    const amount = amountOf(payForm.amount);
 
     if (!(amount > 0)) {
       toast.error("Enter an amount greater than 0");
@@ -650,9 +652,8 @@ export default function Cards() {
               ))}
             </Select>
 
-            <Input
+            <AmountInput
               label="Credit Limit"
-              type="number"
               placeholder="200000"
               value={cardForm.creditLimit}
               onChange={(e) =>
@@ -660,9 +661,8 @@ export default function Cards() {
               }
             />
 
-            <Input
+            <AmountInput
               label="Opening Outstanding"
-              type="number"
               placeholder="0"
               value={cardForm.balance}
               onChange={(e) =>
@@ -741,9 +741,8 @@ export default function Cards() {
           ) : (
             <>
               <div className="grid gap-3">
-                <Input
+                <AmountInput
                   label="Amount"
-                  type="number"
                   value={payForm.amount}
                   onChange={(e) =>
                     setPayForm({ ...payForm, amount: e.target.value })
@@ -795,7 +794,7 @@ export default function Cards() {
               </div>
 
               {payFromAccount &&
-                Number(payForm.amount) > Number(payFromAccount.balance) && (
+                amountOf(payForm.amount) > Number(payFromAccount.balance) && (
                   <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-200">
                     <FiAlertTriangle className="mt-0.5 shrink-0" />
                     This is more than {payFromAccount.name} holds (

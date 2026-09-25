@@ -174,6 +174,13 @@ export const createBudget = async (req, res) => {
   }
 };
 
+// Every caller of this takes data[0], so what sits first decides which month
+// the whole app plans against. Sorting by createdAt made that "the budget you
+// made most recently" - so creating October's plan while still in September
+// put October's categories on the Expenses picker.
+//
+// This month's budget leads. The rest follow newest-month first, so a caller
+// wanting history still has it.
 export const getBudgetByUser = async (req, res) => {
   try {
     const budgets = await Budget.find({
@@ -182,9 +189,23 @@ export const getBudgetByUser = async (req, res) => {
       createdAt: -1,
     });
 
+    const currentKey = monthKeyOf(new Date());
+
+    const decorated = budgets.map((budget) => ({
+      budget,
+      key: keyForBudget(budget),
+    }));
+
+    const current = decorated.filter((item) => item.key === currentKey);
+
+    const others = decorated
+      .filter((item) => item.key !== currentKey)
+      // An unreadable month sorts last rather than jumping the queue.
+      .sort((a, b) => (b.key || "").localeCompare(a.key || ""));
+
     res.json({
       success: true,
-      data: budgets,
+      data: [...current, ...others].map((item) => item.budget),
     });
   } catch (error) {
     res.status(500).json({

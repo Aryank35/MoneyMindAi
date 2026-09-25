@@ -9,9 +9,14 @@ import {
   undoSettlement,
   getObligationDeleteImpact,
   deleteObligation,
+  getPeopleBalances,
 } from "../controllers/obligationController.js";
 
 const router = express.Router();
+
+// Loans and split shares netted per person. Declared early so "people" is
+// never read as an obligation id.
+router.get("/people/:userId", getPeopleBalances);
 
 router.get("/overview/:userId", getObligationOverview);
 

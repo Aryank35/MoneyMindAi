@@ -13,6 +13,8 @@ import {
 } from "react-icons/fi";
 
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AmountInput from "../components/common/AmountInput";
+import { amountOf } from "../utils/calc";
 import Modal from "../components/common/Modal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import Button from "../components/common/Button";
@@ -20,6 +22,7 @@ import Input, { Select } from "../components/common/Input";
 import EmptyState from "../components/common/EmptyState";
 import { Skeleton } from "../components/common/Loader";
 import { useToast } from "../components/common/Toast";
+import PeopleBalances from "../components/common/PeopleBalances";
 
 import {
   getObligationOverview,
@@ -195,7 +198,7 @@ export default function Lending() {
       return;
     }
 
-    if (!(Number(form.principal) > 0)) {
+    if (!(amountOf(form.principal) > 0)) {
       toast.error("Amount must be greater than 0");
       return;
     }
@@ -206,7 +209,7 @@ export default function Lending() {
       const payload = {
         ...form,
         userId: getUserId(),
-        principal: Number(form.principal),
+        principal: amountOf(form.principal),
         promiseDate: form.promiseDate || null,
       };
 
@@ -250,7 +253,7 @@ export default function Lending() {
   };
 
   const handleSettle = async () => {
-    const amount = Number(settleForm.amount);
+    const amount = amountOf(settleForm.amount);
 
     if (!(amount > 0)) {
       toast.error("Enter an amount greater than 0");
@@ -462,6 +465,12 @@ export default function Lending() {
           </>
         )}
       </motion.section>
+
+      {/* Split shares are debts between you and a person too, so they belong
+          here rather than only on the Splits page. */}
+      <div className="mb-6">
+        <PeopleBalances refreshKey={overview?.obligations?.length ?? 0} />
+      </div>
 
       {/* ============ LIST ============ */}
       {all.length === 0 ? (
@@ -698,9 +707,8 @@ export default function Lending() {
             onChange={(e) => setForm({ ...form, relationship: e.target.value })}
           />
 
-          <Input
+          <AmountInput
             label="Amount"
-            type="number"
             value={form.principal}
             onChange={(e) => setForm({ ...form, principal: e.target.value })}
           />
@@ -803,9 +811,8 @@ export default function Lending() {
       >
         {settleTarget && (
           <>
-            <Input
+            <AmountInput
               label="Amount"
-              type="number"
               value={settleForm.amount}
               onChange={(e) =>
                 setSettleForm({ ...settleForm, amount: e.target.value })

@@ -234,3 +234,9 @@ export const evaluateExpression = (input) => {
 
 // Convenience for a form field: the resolved number, or null.
 export const resolveAmount = (input) => evaluateExpression(input).value;
+
+// What a money field is worth at save time. Blank and unparseable both come
+// back as 0, so the caller's existing "must be greater than 0" guard catches
+// them with its own wording - the field itself is already showing the exact
+// parse error in red while it is being typed.
+export const amountOf = (input) => evaluateExpression(input).value ?? 0;

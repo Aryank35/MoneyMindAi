@@ -42,3 +42,11 @@ export const deleteObligation = async (id) => {
 
   return response.data;
 };
+
+// Loans and split shares netted per person - the same answer on the Lending
+// page and the Splits page, because both read it from here.
+export const getPeopleBalances = async (userId) => {
+  const response = await api.get(`/obligations/people/${userId}`);
+
+  return response.data;
+};

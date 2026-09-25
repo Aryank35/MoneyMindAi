@@ -14,6 +14,8 @@ import {
 
 import { getUserId } from "../utils/auth";
 import DashboardLayout from "../components/layout/DashboardLayout";
+import AmountInput from "../components/common/AmountInput";
+import { amountOf } from "../utils/calc";
 import { useToast } from "../components/common/Toast";
 import EmptyState from "../components/common/EmptyState";
 import Modal from "../components/common/Modal";
@@ -121,7 +123,7 @@ export default function Accounts() {
 
       const payload = {
         ...formData,
-        balance: Number(formData.balance),
+        balance: amountOf(formData.balance),
         userId: getUserId(),
       };
 
@@ -203,7 +205,7 @@ export default function Accounts() {
 
       await updateAccount(editingAccount._id, {
         ...formData,
-        balance: Number(formData.balance),
+        balance: amountOf(formData.balance),
       });
 
       setShowEditModal(false);
@@ -559,9 +561,8 @@ export default function Accounts() {
               </p>
             )}
 
-            <Input
+            <AmountInput
               label="Opening Balance"
-              type="number"
               placeholder="Opening Balance"
               value={formData.balance}
               onChange={(e) =>
@@ -799,9 +800,8 @@ export default function Accounts() {
               </p>
             )}
 
-            <Input
+            <AmountInput
               label="Balance"
-              type="number"
               placeholder="Balance"
               value={formData.balance}
               onChange={(e) =>

@@ -22,6 +22,7 @@ import AmountInput from "../components/common/AmountInput";
 import EmptyState from "../components/common/EmptyState";
 import { Skeleton } from "../components/common/Loader";
 import { useToast } from "../components/common/Toast";
+import PeopleBalances from "../components/common/PeopleBalances";
 
 import {
   getSplitOptions,
@@ -35,7 +36,7 @@ import {
 import { getAccountsByUser } from "../services/accountService";
 import { getUserId } from "../utils/auth";
 import { money } from "../utils/incomeFormulas";
-import { evaluateExpression } from "../utils/calc";
+import { evaluateExpression, amountOf } from "../utils/calc";
 import { previewShares, round2 } from "../utils/splitShares";
 
 const toInputDate = (value) => {
@@ -323,7 +324,7 @@ export default function Splits() {
   };
 
   const handleSettle = async () => {
-    const amount = Number(settleForm.amount);
+    const amount = amountOf(settleForm.amount);
 
     if (!(amount > 0)) {
       toast.error("Enter an amount greater than 0");
@@ -517,6 +518,12 @@ export default function Splits() {
           </>
         )}
       </motion.section>
+
+      {/* The same balances the Lending page shows: a split share and a loan
+          are one fact from the other person's point of view. */}
+      <div className="mb-6">
+        <PeopleBalances refreshKey={splits.length} />
+      </div>
 
       {/* ============ LIST ============ */}
       {splits.length === 0 ? (
@@ -975,9 +982,8 @@ export default function Splits() {
       >
         {settleTarget && (
           <>
-            <Input
+            <AmountInput
               label="Amount"
-              type="number"
               value={settleForm.amount}
               onChange={(e) =>
                 setSettleForm({ ...settleForm, amount: e.target.value })
