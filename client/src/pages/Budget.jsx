@@ -39,6 +39,7 @@ import ConfirmDialog from "../components/common/ConfirmDialog";
 import { moveItem } from "../utils/reorder";
 import BudgetOverview from "../components/common/BudgetOverview";
 import SortableRow from "../components/common/SortableRow";
+import BudgetSummaryDialog from "../components/common/BudgetSummaryDialog";
 import MonthNavigator from "../components/common/MonthNavigator";
 import AllocationRuleEditor from "../components/common/AllocationRuleEditor";
 import BankFundingPanel, {
@@ -113,6 +114,10 @@ export default function Budget() {
   // page never guesses a month the server might disagree about.
   // The bank whose shortfall is being funded, if any.
   const [fundingBank, setFundingBank] = useState(null);
+
+  // Shown once after a save, so the plan can be read back the way it will be
+  // lived: account by account rather than category by category.
+  const [showSummary, setShowSummary] = useState(false);
 
   const [monthKey, setMonthKey] = useState(null);
   const [months, setMonths] = useState([]);
@@ -585,6 +590,8 @@ export default function Budget() {
 
       // Close modal only after successful API call
       setShowModal(false);
+
+      setShowSummary(true);
     } catch (error) {
       console.error("Budget save failed:", error);
 
@@ -1082,6 +1089,28 @@ export default function Budget() {
             : `Remaining budget: ${money(overview?.totals?.remaining ?? remaining)}`}
         </p>
       </motion.div>
+
+      <Modal
+        isOpen={showSummary}
+        onClose={() => setShowSummary(false)}
+        title="Your plan, account by account"
+        maxWidth="max-w-lg"
+      >
+        <BudgetSummaryDialog
+          overview={overview}
+          onClose={() => setShowSummary(false)}
+          onFixFunding={() => {
+            // Straight to the account that needs money most.
+            const worst = overview?.bankFunding?.banks?.find(
+              (bank) => bank.shortfall > 0,
+            );
+
+            setShowSummary(false);
+
+            if (worst) setFundingBank(worst);
+          }}
+        />
+      </Modal>
 
       <Modal
         isOpen={Boolean(fundingBank)}

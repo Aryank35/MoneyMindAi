@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   FiPlus,
+  FiRepeat,
   FiSearch,
   FiFilter,
   FiTrash2,
@@ -22,6 +23,8 @@ import {
 } from "../services/expenseService";
 
 import { getUserId } from "../utils/auth";
+import { planCategoryFunding } from "../utils/categoryFunding";
+import { createTransfer } from "../services/transferService";
 import { useConnection } from "../context/connectionContext";
 import {
   enqueue,
@@ -41,6 +44,7 @@ import ConfirmDialog from "../components/common/ConfirmDialog";
 import Modal from "../components/common/Modal";
 import TransactionsPanel from "../components/common/TransactionsPanel";
 import MoneyLeftCard from "../components/common/MoneyLeftCard";
+import CategoryFundingNotice from "../components/common/CategoryFundingNotice";
 import QuickExpenseSheet from "../components/common/QuickExpenseSheet";
 import AmountInput from "../components/common/AmountInput";
 import Button from "../components/common/Button";
@@ -230,7 +234,9 @@ export default function Expenses() {
     loadData();
   }, []);
 
-  const handleAddExpense = async () => {
+  // `withTransfer` moves the category's money across before recording the
+  // expense, so the plan and the balances stay in step.
+  const handleAddExpense = async (withTransfer = false) => {
     try {
       // Budget first: with no budget there are no categories to pick, so a
       // missing category is a symptom, not the thing to report.
@@ -293,6 +299,19 @@ export default function Expenses() {
       }
 
       const expenseDate = new Date(`${formData.date}T${formData.time}`);
+
+      // The money moves first. Recording the expense before topping up the
+      // paying account would briefly overdraw the very account being funded.
+      if (withTransfer && fundingPlan.needed && fundingPlan.possible) {
+        await createTransfer({
+          userId: getUserId(),
+          fromAccountId: fundingPlan.source._id,
+          toAccountId: fundingPlan.paying._id,
+          amount: fundingPlan.amount,
+          note: `Funding ${formData.category}`,
+          transferDate: expenseDate,
+        });
+      }
 
       const payload = {
         userId: getUserId(),
@@ -594,6 +613,16 @@ export default function Expenses() {
   const categoryBudget = budgetCategories.find(
     (category) => category.name === formData.category,
   );
+
+  // Is this being paid from an account other than the one the category is
+  // funded from? Recomputed as the form changes, so the notice appears the
+  // moment the mismatch exists.
+  const fundingPlan = planCategoryFunding({
+    category: categoryBudget,
+    accounts,
+    payingAccountId: formData.account,
+    amount: formData.amount,
+  });
 
   const categorySpent = expenses
     .filter((expense) => expense.category === formData.category)
@@ -1063,13 +1092,36 @@ export default function Expenses() {
           </p>
         </div>
 
-        <button
-          onClick={handleAddExpense}
-          className="mt-5 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 px-5 py-3 rounded-xl transition"
-        >
-          <FiPlus />
-          Save Expense
-        </button>
+        <CategoryFundingNotice
+          plan={fundingPlan}
+          categoryName={formData.category}
+        />
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          {/* One press does both, in the right order. Saving on its own stays
+              available: the expense is real whether or not the money moves. */}
+          {fundingPlan.needed && fundingPlan.possible && (
+            <button
+              onClick={() => handleAddExpense(true)}
+              className="flex items-center gap-2 rounded-xl bg-amber-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-amber-300"
+            >
+              <FiRepeat />
+              Transfer &amp; save
+            </button>
+          )}
+
+          <button
+            onClick={() => handleAddExpense(false)}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition ${
+              fundingPlan.needed && fundingPlan.possible
+                ? "border border-white/10 bg-white/5 hover:bg-white/10"
+                : "bg-indigo-600 hover:bg-indigo-500"
+            }`}
+          >
+            <FiPlus />
+            Save Expense
+          </button>
+        </div>
         {remainingAccountBalance !== null && remainingAccountBalance < 0 && (
           <p className="mt-2 text-sm text-red-400">
             {isCard(selectedAccountData)
