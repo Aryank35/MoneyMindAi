@@ -30,6 +30,7 @@ import EventPlanTab from "../components/events/EventPlanTab";
 import EventTasksTab from "../components/events/EventTasksTab";
 import EventBoardTab from "../components/events/EventBoardTab";
 import EventPeopleTab from "../components/events/EventPeopleTab";
+import SettleUpPanel from "../components/events/SettleUpPanel";
 
 import {
   getEvent,
@@ -755,6 +756,13 @@ export default function EventDetail() {
         {/* ---------------- SPENDING ---------------- */}
         {tab === "expenses" && (
           <div className="space-y-3">
+            {/* The settlement sits above the list: once the spending is in,
+                "who pays whom" is the question that remains. */}
+            <SettleUpPanel
+              eventId={event._id}
+              expenseCount={expenses.length}
+            />
+
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="font-semibold">Every expense</h3>

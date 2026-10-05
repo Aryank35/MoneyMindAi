@@ -14,6 +14,7 @@ import {
   getEventType,
 } from "../config/eventTypes.js";
 import { daysBetween } from "../helpers/dates.js";
+import { buildSettlement } from "../helpers/settleUp.js";
 
 const round2 = (value) => Math.round(Number(value || 0) * 100) / 100;
 
@@ -356,6 +357,12 @@ const buildPayload = (body) => {
   }
 
   if (body.status !== undefined) payload.status = body.status;
+
+  // The budget line this plan's spending belongs to. Trimmed to "" when
+  // cleared, so removing it is as easy as setting it.
+  if (body.budgetCategory !== undefined) {
+    payload.budgetCategory = String(body.budgetCategory || "").trim();
+  }
 
   if (body.budgetCap !== undefined) {
     payload.budgetCap = Math.max(Number(body.budgetCap || 0), 0);
@@ -1237,5 +1244,57 @@ export const getEventOverview = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// =========================================================================
+// SETTLE UP
+//
+// Generated on request rather than kept live: a settlement is only meaningful
+// once the spending has stopped, and recomputing it after every bill would
+// have people chasing a figure that keeps moving.
+// =========================================================================
+
+export const getEventSettlement = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Plan not found" });
+    }
+
+    const splits = await Split.find({ eventId: event._id });
+
+    const settlement = buildSettlement({
+      splits: splits.map((split) =>
+        split.toObject ? split.toObject() : split,
+      ),
+      meName: "Me",
+    });
+
+    // What has already changed hands, so the page can say whether the
+    // generated plan is still the whole story.
+    const settledAlready = splits.reduce(
+      (sum, split) =>
+        sum +
+        (split.settlements || []).reduce(
+          (inner, entry) => inner + Number(entry.amount || 0),
+          0,
+        ),
+      0,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...settlement,
+        eventName: event.name,
+        budgetCategory: event.budgetCategory || "",
+        expenseCount: splits.length,
+        settledAlready: Math.round(settledAlready),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

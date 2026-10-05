@@ -18,9 +18,13 @@ import {
   getAttachment,
   updateAttachment,
   deleteAttachment,
+  getEventSettlement,
 } from "../controllers/eventController.js";
 
 const router = express.Router();
+
+// Who pays whom, in whole rupees. Generated on request.
+router.get("/:id/settlement", getEventSettlement);
 
 // Fixed segments come before "/:id", or "options" would be read as an id.
 router.get("/options", getEventOptions);

@@ -1,4 +1,5 @@
 import Split from "../models/Split.js";
+import Event from "../models/Event.js";
 import Expense from "../models/Expense.js";
 import Account from "../models/Account.js";
 import { deductBalance, addBalance } from "../helpers/accountBalance.js";
@@ -237,6 +238,20 @@ export const createSplit = async (req, res) => {
     const date = req.body.date ? new Date(req.body.date) : new Date();
     const paidByMe = req.body.paidByMe !== false;
 
+    // A plan can name the budget line its spending belongs to. When it does,
+    // it wins over whatever this one bill was tagged with - the point of
+    // setting it is that the whole trip lands in one place rather than
+    // scattering across whichever category each bill happened to pick.
+    let category = req.body.category?.trim() || "";
+
+    if (req.body.eventId) {
+      const event = await Event.findById(req.body.eventId).select(
+        "budgetCategory",
+      );
+
+      if (event?.budgetCategory) category = event.budgetCategory;
+    }
+
     let expenseId = null;
     let advanceAmount = 0;
 
@@ -261,7 +276,7 @@ export const createSplit = async (req, res) => {
         const expense = await Expense.create({
           userId: req.body.userId,
           accountId: String(req.body.accountId),
-          category: req.body.category?.trim() || "Shared",
+          category: category || "Shared",
           amount: myCost,
           note: `${req.body.description.trim()} (my share of a split)`,
           expenseDate: date,
@@ -285,7 +300,7 @@ export const createSplit = async (req, res) => {
       description: req.body.description.trim(),
       totalAmount: total,
       date,
-      category: req.body.category?.trim() || "",
+      category,
       groupName: req.body.groupName?.trim() || "",
       eventId: req.body.eventId || null,
       paidByMe,

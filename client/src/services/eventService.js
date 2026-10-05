@@ -117,3 +117,11 @@ export const deleteEventAttachment = async (attachmentId) => {
 
   return response.data;
 };
+
+// Who pays whom, in whole rupees. Generated on request rather than kept live:
+// a settlement only means something once the spending has stopped.
+export const getEventSettlement = async (id) => {
+  const response = await api.get(`/events/${id}/settlement`);
+
+  return response.data;
+};

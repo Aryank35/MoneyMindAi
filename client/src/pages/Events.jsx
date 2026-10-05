@@ -25,6 +25,7 @@ import {
   createEvent,
 } from "../services/eventService";
 import { getUserId } from "../utils/auth";
+import { getBudgetByUser } from "../services/budgetService";
 import { money } from "../utils/incomeFormulas";
 import { evaluateExpression } from "../utils/calc";
 
@@ -85,6 +86,7 @@ const emptyForm = () => ({
   startDate: toInputDate(),
   endDate: "",
   budgetCap: "",
+  budgetCategory: "",
   seedChecklist: true,
 });
 
@@ -134,6 +136,38 @@ export default function Events() {
 
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // This month's budget lines, offered as the place a plan's spending should
+  // land. A name not on the list is fine - it becomes a new category when the
+  // budget is next edited.
+  const [budgetCategories, setBudgetCategories] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const response = await getBudgetByUser(getUserId());
+
+        // The endpoint puts the current month first.
+        const current = response.data?.[0];
+
+        if (!cancelled) {
+          setBudgetCategories(
+            (current?.categories || []).map((category) => category.name),
+          );
+        }
+      } catch (error) {
+        console.error("Budget categories:", error);
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const selectedType = types.find((type) => type.key === form.type);
@@ -211,6 +245,7 @@ export default function Events() {
         startDate: form.startDate || null,
         endDate: form.endDate || null,
         budgetCap: cap.value,
+        budgetCategory: form.budgetCategory.trim(),
         seedChecklist: form.seedChecklist,
       });
 
@@ -566,6 +601,43 @@ export default function Events() {
             }
             hint="What you are willing to spend in total"
           />
+
+          <div>
+            <label
+              htmlFor="event-budget-category"
+              className="mb-1.5 block text-sm text-slate-400"
+            >
+              Budget category
+            </label>
+
+            {/* Everything spent on this plan is filed here, so a trip shows
+                up as one line in the budget rather than scattering across
+                whichever category each bill happened to pick. */}
+            <input
+              id="event-budget-category"
+              list="event-budget-categories"
+              value={form.budgetCategory}
+              onChange={(event) =>
+                setForm({ ...form, budgetCategory: event.target.value })
+              }
+              placeholder="Optional — e.g. Travel"
+              className="w-full rounded-xl border border-slate-700 bg-slate-800 p-3 text-sm outline-none transition-colors focus:border-indigo-500"
+            />
+
+            <datalist id="event-budget-categories">
+              {budgetCategories.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+
+            <p className="mt-1.5 text-xs text-slate-500">
+              {form.budgetCategory.trim()
+                ? budgetCategories.includes(form.budgetCategory.trim())
+                  ? `Every expense here counts against ${form.budgetCategory.trim()} in your budget.`
+                  : `"${form.budgetCategory.trim()}" is not in this month's budget yet — add it there to track it.`
+                : "All spending on this plan will be filed under one budget line."}
+            </p>
+          </div>
 
           <Select
             label="Starter checklist"

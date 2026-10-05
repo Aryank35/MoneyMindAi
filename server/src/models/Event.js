@@ -223,6 +223,15 @@ const eventSchema = new mongoose.Schema(
     // A cap the user sets up front. Kept apart from the sum of planItems:
     // one is "what I am willing to spend", the other is "what I have
     // itemised so far", and the gap between them is the useful bit.
+    // The budget line every expense on this plan is filed under. Chosen when
+    // the plan is created, so a trip's spending lands in one place instead of
+    // scattering across whatever category each bill happened to pick.
+    budgetCategory: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     budgetCap: {
       type: Number,
       default: 0,
