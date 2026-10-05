@@ -66,3 +66,16 @@ export const getBudgetMonths = async (userId) => {
 
   return response.data;
 };
+
+// Whether a category is already promised to the planner, and whether this
+// expense would break what is planned out of it.
+export const getCategoryCommitment = async (userId, category, amount) => {
+  const query = new URLSearchParams({
+    category: category || "",
+    amount: String(amount || 0),
+  });
+
+  const response = await api.get(`/budget/commitment/${userId}?${query}`);
+
+  return response.data;
+};

@@ -249,7 +249,15 @@ export default function Events() {
         seedChecklist: form.seedChecklist,
       });
 
-      toast.success("Event created");
+      if (response?.budgetLink?.added) {
+        toast.success(
+          `Plan created · "${response.budgetLink.category}" added to your ${
+            response.budgetLink.month || "budget"
+          }`,
+        );
+      } else {
+        toast.success("Plan created");
+      }
       setShowModal(false);
 
       // Straight into the workspace - the list is not where the work happens.

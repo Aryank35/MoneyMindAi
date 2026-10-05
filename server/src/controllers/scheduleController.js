@@ -10,6 +10,10 @@ import {
   occurrencesBetween,
 } from "../helpers/recurrence.js";
 import { addDays, startOfDay } from "../helpers/dates.js";
+import {
+  ensureCategory,
+  monthKeyForDate,
+} from "../helpers/budgetCategoryLink.js";
 
 // =========================================================================
 // HELPERS
@@ -148,7 +152,24 @@ export const createSchedule = async (req, res) => {
       userId: req.body.userId,
     });
 
-    res.status(201).json({ success: true, data: decorate(schedule) });
+    // A planned outgoing names a budget line. If that line does not exist
+    // yet, it is added rather than left to become unbudgeted spending the
+    // moment the bill is paid. Contributions are money coming in, so they
+    // have no budget line to belong to.
+    const linked =
+      schedule.kind === "contribution"
+        ? { added: false, reason: "not-spending" }
+        : await ensureCategory(req.body.userId, schedule.category, {
+            monthKey: monthKeyForDate(schedule.startDate),
+            // The bill's own amount is a far better starting limit than
+            // zero, and it is the figure the user just typed.
+            limit: Number(schedule.amount || 0),
+            accountId: schedule.accountId || null,
+          });
+
+    res
+      .status(201)
+      .json({ success: true, data: decorate(schedule), budgetLink: linked });
   } catch (err) {
     console.error("Schedule Error:", err);
 
@@ -204,7 +225,18 @@ export const updateSchedule = async (req, res) => {
 
     const updated = await existing.save();
 
-    res.json({ success: true, data: decorate(updated) });
+    // Renaming the category on an edit has the same consequence as naming a
+    // new one on create, so it is handled the same way.
+    const linked =
+      updated.kind === "contribution"
+        ? { added: false, reason: "not-spending" }
+        : await ensureCategory(String(updated.userId), updated.category, {
+            monthKey: monthKeyForDate(updated.startDate),
+            limit: Number(updated.amount || 0),
+            accountId: updated.accountId || null,
+          });
+
+    res.json({ success: true, data: decorate(updated), budgetLink: linked });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

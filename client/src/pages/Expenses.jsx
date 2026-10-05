@@ -36,7 +36,11 @@ import { readCache, writeCache, cacheKey } from "../utils/localCache";
 import { evaluateExpression } from "../utils/calc";
 import { CHART_ACCENT } from "../utils/chartTheme";
 
-import { getBudgetByUser, updateBudget } from "../services/budgetService";
+import {
+  getBudgetByUser,
+  updateBudget,
+  getCategoryCommitment,
+} from "../services/budgetService";
 import { useToast } from "../components/common/Toast";
 import { PageLoader } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
@@ -45,6 +49,7 @@ import Modal from "../components/common/Modal";
 import TransactionsPanel from "../components/common/TransactionsPanel";
 import MoneyLeftCard from "../components/common/MoneyLeftCard";
 import CategoryFundingNotice from "../components/common/CategoryFundingNotice";
+import PlannedConflictDialog from "../components/common/PlannedConflictDialog";
 import QuickExpenseSheet from "../components/common/QuickExpenseSheet";
 import AmountInput from "../components/common/AmountInput";
 import Button from "../components/common/Button";
@@ -236,7 +241,12 @@ export default function Expenses() {
 
   // `withTransfer` moves the category's money across before recording the
   // expense, so the plan and the balances stay in step.
-  const handleAddExpense = async (withTransfer = false) => {
+  // Set when a category is already promised to the planner and this expense
+  // would break it. Holds everything needed to finish the save once the user
+  // has decided.
+  const [plannedConflict, setPlannedConflict] = useState(null);
+
+  const handleAddExpense = async (withTransfer = false, skipCheck = false) => {
     try {
       // Budget first: with no budget there are no categories to pick, so a
       // missing category is a symptom, not the thing to report.
@@ -296,6 +306,27 @@ export default function Expenses() {
         );
 
         return;
+      }
+
+      // Before anything is written: is this category already spoken for? A
+      // failure here must not block the expense - a warning that cannot be
+      // fetched is not a reason to lose a real transaction.
+      if (!skipCheck) {
+        try {
+          const response = await getCategoryCommitment(
+            getUserId(),
+            formData.category,
+            amount,
+          );
+
+          if (response.data?.exceeds) {
+            setPlannedConflict({ ...response.data, withTransfer });
+
+            return;
+          }
+        } catch (error) {
+          console.error("Commitment check:", error);
+        }
       }
 
       const expenseDate = new Date(`${formData.date}T${formData.time}`);
@@ -1681,6 +1712,27 @@ export default function Expenses() {
           </>
         )}
       </Modal>
+
+      <Modal
+        isOpen={Boolean(plannedConflict)}
+        onClose={() => setPlannedConflict(null)}
+        title="Already planned for this category"
+        maxWidth="max-w-md"
+      >
+        <PlannedConflictDialog
+          conflict={plannedConflict}
+          onClose={() => setPlannedConflict(null)}
+          onConfirm={() => {
+            const { withTransfer } = plannedConflict || {};
+
+            setPlannedConflict(null);
+
+            // Second pass skips the check it has just answered.
+            handleAddExpense(Boolean(withTransfer), true);
+          }}
+        />
+      </Modal>
+
 
       <ConfirmDialog
         isOpen={!!deleteTarget}

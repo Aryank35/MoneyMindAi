@@ -37,6 +37,7 @@ import {
 } from "../services/scheduleService";
 import { getAccountsByUser } from "../services/accountService";
 import { getUserId } from "../utils/auth";
+import { getBudgetByUser } from "../services/budgetService";
 import { money } from "../utils/incomeFormulas";
 
 const STATE_TONES = {
@@ -112,6 +113,38 @@ export default function Planner() {
   const [overview, setOverview] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // This month's budget lines, offered so a planned bill maps onto one that
+  // already exists rather than quietly creating a near-duplicate.
+  const [budgetCategories, setBudgetCategories] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const response = await getBudgetByUser(getUserId());
+
+        // The endpoint puts the current month first.
+        const current = response.data?.[0];
+
+        if (!cancelled) {
+          setBudgetCategories(
+            (current?.categories || []).map((category) => category.name),
+          );
+        }
+      } catch (error) {
+        console.error("Budget categories:", error);
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null);
 
@@ -292,12 +325,24 @@ export default function Planner() {
             : undefined,
       };
 
+      // The server reports whether it had to add the budget line, so the
+      // change is announced rather than discovered later.
+      const announce = (response, fallback) => {
+        const link = response?.budgetLink;
+
+        if (link?.added) {
+          toast.success(
+            `${fallback} · "${link.category}" added to your ${link.month || "budget"}`,
+          );
+        } else {
+          toast.success(fallback);
+        }
+      };
+
       if (editing) {
-        await updateSchedule(editing._id, payload);
-        toast.success("Schedule updated");
+        announce(await updateSchedule(editing._id, payload), "Schedule updated");
       } else {
-        await createSchedule(payload);
-        toast.success("Schedule added");
+        announce(await createSchedule(payload), "Schedule added");
       }
 
       setShowModal(false);
@@ -874,12 +919,44 @@ export default function Planner() {
           </Select>
 
           {!isContribution && (
-            <Input
-              label="Budget category"
-              placeholder="Rent"
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-            />
+            <div>
+              <label
+                htmlFor="planner-category"
+                className="mb-1.5 block text-sm text-slate-400"
+              >
+                Budget category
+              </label>
+
+              {/* Paying this bill books an expense under this name. If the
+                  name is not a budget line, the spending would land outside
+                  the plan - so one is created rather than left to vanish. */}
+              <input
+                id="planner-category"
+                list="planner-categories"
+                placeholder="Rent"
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 p-3 text-sm outline-none transition-colors focus:border-indigo-500"
+              />
+
+              <datalist id="planner-categories">
+                {budgetCategories.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+
+              <p className="mt-1.5 text-xs text-slate-500">
+                {form.category.trim()
+                  ? budgetCategories.some(
+                      (name) =>
+                        name.trim().toLowerCase() ===
+                        form.category.trim().toLowerCase(),
+                    )
+                    ? `Payments count against ${form.category.trim()} in your budget.`
+                    : `"${form.category.trim()}" will be added to your budget so this spending is tracked.`
+                  : "Without one, paying this lands outside your budget."}
+              </p>
+            </div>
           )}
 
           {isContribution && (

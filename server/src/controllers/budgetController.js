@@ -17,6 +17,7 @@ import {
   isCashType,
 } from "../helpers/spendable.js";
 import { startOfDay } from "../helpers/dates.js";
+import { buildCategoryCommitment } from "../helpers/categoryCommitments.js";
 import {
   buildAccountRequirements,
   buildBudgetPlan,
@@ -581,6 +582,92 @@ export const getBudgetMonths = async (req, res) => {
     res.json({
       success: true,
       data: { months, currentKey, nextKey },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// =========================================================================
+// IS THIS CATEGORY ALREADY SPOKEN FOR?
+//
+// Asked while an expense is being typed. A budget line can look healthy and
+// still be fully committed - "Rent" at 20,000 with nothing spent has no room
+// at all if an 18,000 rent bill is sitting unpaid in the planner.
+// =========================================================================
+
+export const getCategoryCommitment = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const categoryName = String(req.query.category || "").trim();
+
+    const amount = Number(req.query.amount || 0);
+
+    const now = new Date();
+
+    const key = monthKeyOf(now);
+
+    const [year, month] = key.split("-").map(Number);
+
+    const from = new Date(year, month - 1, 1);
+    const to = new Date(year, month, 0, 23, 59, 59, 999);
+
+    if (!categoryName) {
+      return res.json({
+        success: true,
+        data: { hasCommitments: false, exceeds: false },
+      });
+    }
+
+    const [budget, accounts, decoratedSchedules] = await Promise.all([
+      findBudgetForMonth(userId, key),
+      Account.find({ userId }),
+      loadDecoratedSchedules(userId, startOfDay(now)),
+    ]);
+
+    const category = (budget?.categories || []).find(
+      (item) =>
+        String(item.name || "").trim().toLowerCase() ===
+        categoryName.toLowerCase(),
+    );
+
+    // Spending so far on this line, from the ledger - so a split share counts
+    // the same way it does everywhere else.
+    const entries = (
+      await Promise.all(accounts.map((account) => collectEntries(account)))
+    ).flat();
+
+    const spent = entries
+      .filter((entry) => {
+        const date = new Date(entry.date);
+
+        return (
+          SPEND_KINDS.has(entry.kind) &&
+          date >= from &&
+          date <= to &&
+          String(entry.label || "").trim().toLowerCase() ===
+            categoryName.toLowerCase()
+        );
+      })
+      .reduce((total, entry) => total - entry.amount, 0);
+
+    const upcomingBills = collectUpcomingSchedules(
+      decoratedSchedules.filter((item) => item.isActive),
+      startOfDay(now),
+      to,
+    );
+
+    res.json({
+      success: true,
+      data: buildCategoryCommitment({
+        categoryName,
+        limit: Number(category?.limit || 0),
+        spent,
+        upcomingBills,
+        amount,
+        horizon: to,
+      }),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

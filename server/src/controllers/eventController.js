@@ -15,6 +15,10 @@ import {
 } from "../config/eventTypes.js";
 import { daysBetween } from "../helpers/dates.js";
 import { buildSettlement } from "../helpers/settleUp.js";
+import {
+  ensureCategory,
+  monthKeyForDate,
+} from "../helpers/budgetCategoryLink.js";
 
 const round2 = (value) => Math.round(Number(value || 0) * 100) / 100;
 
@@ -428,7 +432,17 @@ export const createEvent = async (req, res) => {
       })),
     });
 
-    res.status(201).json({ success: true, data: decorateEvent(event, []) });
+    // Every expense on this plan will be filed under its budget category, so
+    // that line has to exist for the spending to land anywhere. The plan's
+    // own cap is the natural starting limit.
+    const linked = await ensureCategory(req.body.userId, event.budgetCategory, {
+      monthKey: monthKeyForDate(event.startDate),
+      limit: Number(event.budgetCap || 0),
+    });
+
+    res
+      .status(201)
+      .json({ success: true, data: decorateEvent(event, []), budgetLink: linked });
   } catch (err) {
     console.error("Event create error:", err);
 
@@ -579,9 +593,21 @@ export const updateEvent = async (req, res) => {
 
     const saved = await event.save();
 
+    // Changing the category on an edit needs the same treatment as naming
+    // one on create.
+    const linked = await ensureCategory(
+      String(saved.userId),
+      saved.budgetCategory,
+      {
+        monthKey: monthKeyForDate(saved.startDate),
+        limit: Number(saved.budgetCap || 0),
+      },
+    );
+
     res.json({
       success: true,
       data: decorateEvent(saved, await loadSplits(saved._id)),
+      budgetLink: linked,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

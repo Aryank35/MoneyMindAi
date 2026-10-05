@@ -9,6 +9,7 @@ import {
   getBudgetDeleteImpact,
   getBudgetOverview,
   getBudgetMonths,
+  getCategoryCommitment,
 } from "../controllers/budgetController.js";
 
 const budgetRoutes = express.Router();
@@ -31,6 +32,9 @@ budgetRoutes.get("/overview/:userId", getBudgetOverview);
 
 // Which months have a plan, for the history navigator.
 budgetRoutes.get("/months/:userId", getBudgetMonths);
+
+// Whether a category is already promised to the planner.
+budgetRoutes.get("/commitment/:userId", getCategoryCommitment);
 
 budgetRoutes.get("/:id/delete-impact", getBudgetDeleteImpact);
 
