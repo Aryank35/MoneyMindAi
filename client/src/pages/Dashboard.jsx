@@ -27,6 +27,7 @@ import AccountCard from "../components/common/AccountCard";
 import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import MoneyLeftCard from "../components/common/MoneyLeftCard";
+import DueAutoDebits from "../components/common/DueAutoDebits";
 
 import { getDashboardOverview } from "../services/dashboardService";
 import { getUserId } from "../utils/auth";
@@ -359,6 +360,8 @@ export default function Dashboard() {
           )}
         </div>
       </motion.section>
+
+      <DueAutoDebits />
 
       {/* The first thing after the hero, because "can I spend?" is the
           question the rest of the page only answers indirectly. */}

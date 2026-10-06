@@ -9,9 +9,16 @@ import {
   updateInvestmentValue,
   getInvestmentDeleteImpact,
   deleteInvestment,
+  getDueAutoDebits,
+  postAutoDebits,
 } from "../controllers/investmentController.js";
 
 const router = express.Router();
+
+// Declared before "/:id" so these are not read as investment ids.
+router.get("/auto-debits/:userId", getDueAutoDebits);
+
+router.post("/auto-debits/post", postAutoDebits);
 
 // Static routes first so "types" and "portfolio" are not read as ids.
 router.get("/types", getInvestmentTypeCatalog);

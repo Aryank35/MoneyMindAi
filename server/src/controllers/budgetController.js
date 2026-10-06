@@ -1,6 +1,8 @@
 import Budget from "../models/Budget.js";
 import Account from "../models/Account.js";
 import Obligation from "../models/Obligation.js";
+import Investment from "../models/Investment.js";
+import { monthlyAutoDebitTotal } from "../helpers/autoDebits.js";
 import {
   sumBudgetableIncome,
   getBudgetableIncomeBreakdown,
@@ -44,6 +46,17 @@ const parseMonthLabel = (label) => {
   return { month: parsed.getMonth() + 1, year: parsed.getFullYear() };
 };
 
+// A budget with no savings line is a spending plan, not a budget. The rule
+// is deliberately about the GROUP, not a category called "Investment": people
+// name it SIPs, Mutual funds, Future - any of which is a real savings line.
+const hasSavingsLine = (categories = []) =>
+  categories.some(
+    (category) =>
+      category.group === "save" ||
+      category.type === "Investment" ||
+      category.type === "Savings",
+  );
+
 const validateCategories = (totalBudget, categories) => {
   let totalCategoryLimit = 0;
 
@@ -73,6 +86,10 @@ const validateCategories = (totalBudget, categories) => {
 
   if (totalCategoryLimit > totalBudget) {
     return "Category limits exceed total budget";
+  }
+
+  if (!hasSavingsLine(categories)) {
+    return "Add a savings or investment category - every budget needs somewhere for money to go that is not spending";
   }
 
   return null;
@@ -331,6 +348,13 @@ export const getBudgetPlanning = async (req, res) => {
         // Suggested, not enforced - planning ahead of recorded income is
         // legitimate, so the client warns rather than blocks.
         suggestedTotalBudget: income.budgetable,
+
+        // What is already promised to standing instructions every month.
+        // This is the floor for the savings line: money that WILL leave the
+        // account whether or not the budget makes room for it.
+        autoDebitMonthly: monthlyAutoDebitTotal(
+          await Investment.find({ userId, isSip: true }),
+        ),
       },
     });
   } catch (error) {

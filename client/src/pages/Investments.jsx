@@ -29,6 +29,7 @@ import Input, { Select } from "../components/common/Input";
 import EmptyState from "../components/common/EmptyState";
 import { Skeleton } from "../components/common/Loader";
 import { useToast } from "../components/common/Toast";
+import DueAutoDebits from "../components/common/DueAutoDebits";
 
 import {
   getInvestmentTypes,
@@ -488,6 +489,9 @@ export default function Investments() {
 
   return (
     <DashboardLayout>
+      {/* Standing instructions that came due while the app was shut. */}
+      <DueAutoDebits />
+
       <div className="min-h-screen bg-slate-950 text-white">
         {/* ============ PORTFOLIO HEADER ============ */}
         <motion.section

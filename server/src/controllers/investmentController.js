@@ -2,6 +2,10 @@ import Investment from "../models/Investment.js";
 import Account from "../models/Account.js";
 import { addBalance, deductBalance } from "../helpers/accountBalance.js";
 import {
+  buildDueDebits,
+  monthlyAutoDebitTotal,
+} from "../helpers/autoDebits.js";
+import {
   INVESTMENT_TYPES,
   INVESTMENT_CATEGORIES,
   getInvestmentType,
@@ -442,6 +446,141 @@ export const getPortfolio = async (req, res) => {
         best: ranked[0] || null,
         worst: ranked.length > 1 ? ranked[ranked.length - 1] : null,
         holdings: investments.sort((a, b) => b.currentValue - a.currentValue),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// =========================================================================
+// AUTO-DEBITS
+//
+// The app has no background job, so an instalment cannot fire on its own.
+// These two endpoints do the next best thing: say what WOULD have fired, and
+// record it when the user says go.
+// =========================================================================
+
+export const getDueAutoDebits = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [investments, accounts] = await Promise.all([
+      Investment.find({ userId, isSip: true }),
+      Account.find({ userId }),
+    ]);
+
+    const result = buildDueDebits({
+      investments: investments.map((item) =>
+        item.toObject ? item.toObject() : item,
+      ),
+      today: new Date(),
+    });
+
+    const byId = new Map(accounts.map((a) => [String(a._id), a]));
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        due: result.due.map((item) => ({
+          ...item,
+          accountName: byId.get(item.accountId)?.name || "Unknown account",
+        })),
+        byAccount: result.byAccount.map((entry) => ({
+          ...entry,
+          name: byId.get(entry.accountId)?.name || "Unknown account",
+          balance: Number(byId.get(entry.accountId)?.balance || 0),
+          // Flagged so the user is told before posting, not after it
+          // overdraws something.
+          short: Number(byId.get(entry.accountId)?.balance || 0) < entry.total,
+        })),
+        monthlyTotal: monthlyAutoDebitTotal(investments),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const postAutoDebits = async (req, res) => {
+  try {
+    const { userId, items } = req.body;
+
+    if (!userId || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Send the instalments to record",
+      });
+    }
+
+    const posted = [];
+    const skipped = [];
+
+    for (const item of items) {
+      const investment = await Investment.findOne({
+        _id: item.investmentId,
+        userId,
+      });
+
+      if (!investment) {
+        skipped.push({ ...item, reason: "not-found" });
+        continue;
+      }
+
+      // The guard that matters. Two tabs, a double tap, or a replayed
+      // request must not buy the same instalment twice.
+      const already = (investment.sipHistory || []).some(
+        (entry) => entry.monthKey === item.monthKey,
+      );
+
+      if (already) {
+        skipped.push({ ...item, reason: "already-posted" });
+        continue;
+      }
+
+      const amount = Math.round(Number(investment.sipAmount) || 0);
+
+      if (amount <= 0 || !investment.accountId) {
+        skipped.push({ ...item, reason: "nothing-to-post" });
+        continue;
+      }
+
+      investment.sipHistory.push({
+        monthKey: item.monthKey,
+        date: item.date ? new Date(item.date) : new Date(),
+        amount,
+        accountId: investment.accountId,
+      });
+
+      // The instalment adds to what has been put in; the holding is worth
+      // more by the same amount until the next valuation says otherwise.
+      investment.investedAmount =
+        Number(investment.investedAmount || 0) + amount;
+
+      investment.currentValue = Number(investment.currentValue || 0) + amount;
+
+      // Every instalment moves money, so these are marked as applied.
+      investment.balanceApplied = true;
+
+      await investment.save();
+
+      await deductBalance(investment.accountId, amount);
+
+      posted.push({
+        investmentId: String(investment._id),
+        name: investment.name,
+        monthKey: item.monthKey,
+        amount,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        posted,
+        skipped,
+        total: posted.reduce((sum, item) => sum + item.amount, 0),
       },
     });
   } catch (error) {

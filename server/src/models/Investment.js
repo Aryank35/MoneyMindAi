@@ -92,6 +92,23 @@ const investmentSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Which months this SIP has already been debited for. Keyed by month so
+    // opening the app twice in a day cannot buy the same instalment twice -
+    // the one failure that would quietly cost real money.
+    sipHistory: [
+      {
+        _id: false,
+        monthKey: { type: String, required: true },
+        date: { type: Date, required: true },
+        amount: { type: Number, required: true, min: 0 },
+        accountId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Account",
+          default: null,
+        },
+      },
+    ],
+
     goal: {
       type: String,
       default: "",

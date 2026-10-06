@@ -50,3 +50,22 @@ export const deleteInvestment = async (id) => {
 
   return response.data;
 };
+
+// Instalments that would have fired on their day, today and on days already
+// gone by. Nothing moves until postAutoDebits is called.
+export const getDueAutoDebits = async (userId) => {
+  const response = await api.get(`/investments/auto-debits/${userId}`);
+
+  return response.data;
+};
+
+// Records the chosen instalments: each adds to the holding and takes the
+// money from its account.
+export const postAutoDebits = async (userId, items) => {
+  const response = await api.post("/investments/auto-debits/post", {
+    userId,
+    items,
+  });
+
+  return response.data;
+};
