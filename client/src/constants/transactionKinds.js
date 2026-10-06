@@ -19,6 +19,9 @@ export const TRANSACTION_KINDS = {
   "transfer-in": { label: "Transfer in", tone: "text-emerald-300" },
   "transfer-out": { label: "Transfer out", tone: "text-slate-300" },
   "pot-funding": { label: "Into a pot", tone: "text-indigo-300" },
+  // Money that became an asset rather than being spent, so it sits with
+  // pot funding rather than with expenses.
+  investment: { label: "Invested", tone: "text-violet-300" },
   "pot-withdrawal": { label: "Out of a pot", tone: "text-indigo-300" },
   lent: { label: "Lent out", tone: "text-amber-300" },
   borrowed: { label: "Borrowed", tone: "text-amber-300" },

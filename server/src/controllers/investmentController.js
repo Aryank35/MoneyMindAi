@@ -1,4 +1,6 @@
 import Investment from "../models/Investment.js";
+import Account from "../models/Account.js";
+import { addBalance, deductBalance } from "../helpers/accountBalance.js";
 import {
   INVESTMENT_TYPES,
   INVESTMENT_CATEGORIES,
@@ -134,10 +136,35 @@ export const createInvestment = async (req, res) => {
       return res.status(400).json({ success: false, message: error });
     }
 
+    const payload = buildPayload(req.body, type);
+
+    // Buying takes the money out of the funding account - but only when the
+    // caller asks. Recording a holding you already own must not empty an
+    // account for a purchase made months ago, so this is opt-in per record.
+    const moveMoney =
+      req.body.deductFromAccount === true &&
+      Boolean(payload.accountId) &&
+      Number(payload.investedAmount) > 0;
+
+    if (moveMoney) {
+      const account = await Account.findById(payload.accountId);
+
+      if (!account) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Funding account not found" });
+      }
+    }
+
     const investment = await Investment.create({
-      ...buildPayload(req.body, type),
+      ...payload,
+      balanceApplied: moveMoney,
       userId: req.body.userId,
     });
+
+    if (moveMoney) {
+      await deductBalance(payload.accountId, payload.investedAmount);
+    }
 
     res.status(201).json({ success: true, data: decorate(investment) });
   } catch (error) {
@@ -256,6 +283,9 @@ export const getInvestmentDeleteImpact = async (req, res) => {
         investedAmount: decorated.investedAmount,
         currentValue: decorated.currentValue,
         gain: decorated.gain,
+        // So the confirmation can say whether money comes back.
+        balanceApplied: Boolean(decorated.balanceApplied),
+        accountId: decorated.accountId || null,
       },
     });
   } catch (error) {
@@ -273,7 +303,19 @@ export const deleteInvestment = async (req, res) => {
         .json({ success: false, message: "Investment not found" });
     }
 
-    res.json({ success: true, message: "Investment removed from portfolio" });
+    // Deleting a holding whose purchase moved money puts that money back.
+    // Only ones that actually took it - a record of something already owned
+    // never debited anything, so refunding it would invent cash.
+    if (investment.balanceApplied && investment.accountId) {
+      await addBalance(investment.accountId, investment.investedAmount);
+    }
+
+    res.json({
+      success: true,
+      message: investment.balanceApplied
+        ? "Investment removed and the money returned to its account"
+        : "Investment removed from portfolio",
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

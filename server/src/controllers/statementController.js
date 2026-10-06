@@ -5,6 +5,7 @@ import Transfer from "../models/Transfer.js";
 import Wishlist from "../models/Wishlist.js";
 import Obligation from "../models/Obligation.js";
 import Split from "../models/Split.js";
+import Investment from "../models/Investment.js";
 import {
   getCardCycle,
   getDueStatus,
@@ -35,7 +36,7 @@ export const collectEntries = async (account) => {
   // statement silently loses movements and stops tying out. Pots and
   // lending were missing, which understated the opening balance by whatever
   // had been set aside or lent.
-  const [incomes, expenses, transfers, pots, obligations, splits] =
+  const [incomes, expenses, transfers, pots, obligations, splits, investments] =
     await Promise.all([
     Income.find({
       $or: [{ accountId: id }, { epfAccountId: id }],
@@ -51,6 +52,10 @@ export const collectEntries = async (account) => {
     Split.find({
       $or: [{ accountId: id }, { "settlements.accountId": id }],
     }),
+    // Only holdings whose purchase actually took money out of this account.
+    // A record of something already owned never moved a balance, so putting
+    // it in the ledger would invent a debit that never happened.
+    Investment.find({ accountId: id, balanceApplied: true }),
   ]);
 
   const entries = [];
@@ -216,6 +221,22 @@ export const collectEntries = async (account) => {
   }
 
   entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  // Buying an investment is money leaving the account - but it is not
+  // spending. The cash became an asset, so net worth did not change. It sits
+  // with pot funding and lending as "moved, not spent", which is why it is
+  // not in SPEND_KINDS and never counts against a budget.
+  for (const investment of investments) {
+    entries.push({
+      id: String(investment._id),
+      kind: "investment",
+      date: investment.purchaseDate || investment.createdAt,
+      amount: -Number(investment.investedAmount || 0),
+      label: investment.name || "Investment",
+      detail: investment.platform || "",
+      note: investment.note || "",
+    });
+  }
 
   return entries;
 };

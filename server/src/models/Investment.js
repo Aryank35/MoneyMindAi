@@ -73,12 +73,23 @@ const investmentSchema = new mongoose.Schema(
       max: 31,
     },
 
-    // Reference only - which account funds this. Balances are not touched,
-    // so recording a holding never silently moves money.
+    // Which account funds this. Whether the money actually moves is decided
+    // per record by `balanceApplied` below - this is only the link.
     accountId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Account",
       default: null,
+    },
+
+    // Whether buying this actually took the money out of `accountId`.
+    //
+    // False for every holding recorded before this existed - those were
+    // entered as a record of something already owned, and deducting them now
+    // would empty accounts for purchases made months ago. Only a new entry
+    // that asks for it moves a balance.
+    balanceApplied: {
+      type: Boolean,
+      default: false,
     },
 
     goal: {

@@ -40,6 +40,7 @@ import {
   deleteInvestment,
 } from "../services/investmentService";
 import { getUserId } from "../utils/auth";
+import { getAccountsByUser } from "../services/accountService";
 import { money } from "../utils/incomeFormulas";
 import { resolveFields, evaluateFormula } from "../utils/formula";
 import { CHART_COLORS, TOOLTIP_STYLE } from "../utils/chartTheme";
@@ -69,6 +70,11 @@ const emptyForm = (type) => ({
   isSip: false,
   sipAmount: "",
   sipDay: 5,
+  accountId: "",
+  // Off by default: most first entries are a record of something already
+  // owned, and deducting those would empty an account for a purchase made
+  // months ago.
+  deductFromAccount: false,
   fields: (type?.fields || []).reduce(
     (values, field) => ({ ...values, [field.key]: "" }),
     {},
@@ -97,6 +103,30 @@ export default function Investments() {
   const shouldReduceMotion = useReducedMotion();
 
   const [types, setTypes] = useState([]);
+
+  // Needed so a holding can name the account that funded it. Cards are left
+  // out: an investment is not bought on credit here.
+  const [accounts, setAccounts] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const response = await getAccountsByUser(getUserId());
+
+        if (!cancelled) setAccounts(response.data || []);
+      } catch (error) {
+        console.error("Accounts:", error);
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [categories, setCategories] = useState({});
   const [portfolio, setPortfolio] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -312,6 +342,10 @@ export default function Investments() {
         isSip: form.isSip,
         sipAmount: amountOf(form.sipAmount),
         sipDay: form.sipDay,
+        accountId: form.accountId || null,
+        // Only honoured on create: an edit must never move money a second
+        // time for a purchase that already did.
+        deductFromAccount: !editing && form.deductFromAccount,
         // Money fields accept arithmetic, so they are resolved here rather
         // than shipped as "500+200" for the server to choke on. Non-money
         // fields are plain number inputs and pass straight through.
@@ -331,7 +365,12 @@ export default function Investments() {
         toast.success("Holding updated");
       } else {
         await createInvestment(payload);
-        toast.success("Added to portfolio");
+
+        toast.success(
+          payload.deductFromAccount && payload.accountId
+            ? "Added to portfolio · money taken from the account"
+            : "Added to portfolio",
+        );
       }
 
       setShowModal(false);
@@ -421,7 +460,11 @@ export default function Investments() {
       deleteImpact.investedAmount,
     )} invested and ${money(Math.abs(deleteImpact.gain))} ${
       deleteImpact.gain >= 0 ? "gain" : "loss"
-    }. Your accounts and transactions are not affected. This cannot be undone.`;
+    }. ${
+      deleteImpact.balanceApplied
+        ? `The ${money(deleteImpact.investedAmount)} will go back to the account it came from.`
+        : "Your accounts and transactions are not affected."
+    } This cannot be undone.`;
   };
 
   // =====================================================================
@@ -880,6 +923,63 @@ export default function Investments() {
               value={form.platform}
               onChange={(e) => setForm({ ...form, platform: e.target.value })}
             />
+          </div>
+
+          {/* Funding account. Linking it alone changes nothing - the money
+              only moves if the box below is ticked. */}
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <Select
+              label="Funded from"
+              value={form.accountId}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  accountId: e.target.value,
+                  // Unticking is implied by clearing the account: there is
+                  // nothing left to take the money from.
+                  deductFromAccount: e.target.value
+                    ? form.deductFromAccount
+                    : false,
+                })
+              }
+            >
+              <option value="">Not linked to an account</option>
+
+              {accounts
+                .filter((account) => account.type !== "Credit Card")
+                .map((account) => (
+                  <option key={account._id} value={account._id}>
+                    {account.name} — {money(account.balance)}
+                  </option>
+                ))}
+            </Select>
+
+            {!editing && form.accountId && (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <label className="flex cursor-pointer items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.deductFromAccount}
+                    onChange={(e) =>
+                      setForm({ ...form, deductFromAccount: e.target.checked })
+                    }
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-400"
+                  />
+
+                  <span>
+                    <span className="block text-slate-200">
+                      Take the money from this account
+                    </span>
+
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      {form.deductFromAccount
+                        ? "The balance drops and it shows in your activity as invested — not as spending, since it became an asset."
+                        : "Leave off if you already own this and are just recording it."}
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Type-specific fields */}
