@@ -408,9 +408,14 @@ export default function EventDetail() {
                 </span>
               </p>
 
-              {event.daysUntilStart !== null &&
-                event.daysUntilStart > 0 &&
-                event.status !== "cancelled" && (
+              {/* A countdown only belongs on something still ahead of you.
+                  `suggestedStatus` already honours a plan the user marked
+                  done, so a trip finished early stops counting down to an
+                  end date it never reached. */}
+              {event.suggestedStatus !== "cancelled" &&
+                event.suggestedStatus !== "done" &&
+                event.daysUntilStart !== null &&
+                event.daysUntilStart > 0 && (
                   <p className="mt-2 inline-block rounded-full bg-indigo-500/15 px-3 py-1 text-sm text-indigo-200">
                     {event.daysUntilStart === 1
                       ? "Tomorrow"
@@ -418,7 +423,19 @@ export default function EventDetail() {
                   </p>
                 )}
 
-              {event.status === "cancelled" && (
+              {event.suggestedStatus === "ongoing" && (
+                <p className="mt-2 inline-block rounded-full bg-emerald-500/15 px-3 py-1 text-sm text-emerald-200">
+                  Happening now
+                </p>
+              )}
+
+              {event.suggestedStatus === "done" && (
+                <p className="mt-2 inline-block rounded-full bg-slate-500/15 px-3 py-1 text-sm text-slate-300">
+                  Finished
+                </p>
+              )}
+
+              {event.suggestedStatus === "cancelled" && (
                 <p className="mt-2 inline-block rounded-full bg-red-500/15 px-3 py-1 text-sm text-red-200">
                   Cancelled
                 </p>

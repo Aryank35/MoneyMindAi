@@ -79,3 +79,12 @@ export const getCategoryCommitment = async (userId, category, amount) => {
 
   return response.data;
 };
+
+// Utilisation per month and across every month that has a plan. The monthly
+// rows answer "did I stick to it", the overall roll-up answers "do I keep
+// setting this limit wrong".
+export const getBudgetUtilization = async (userId) => {
+  const response = await api.get(`/budget/utilization/${userId}`);
+
+  return response.data;
+};

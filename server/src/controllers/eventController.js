@@ -22,6 +22,19 @@ import {
 
 const round2 = (value) => Math.round(Number(value || 0) * 100) / 100;
 
+// Statuses that mean "this plan is over". Once the user has set one of
+// these, the dates stop having a say - see `suggestedStatus` below.
+const TERMINAL_STATUSES = new Set(["done", "cancelled"]);
+
+// Over, by either route: the user said so, or the end date has passed.
+export const isEventOver = (event, today = new Date()) => {
+  if (TERMINAL_STATUSES.has(event.status)) return true;
+
+  if (!event.endDate) return false;
+
+  return daysBetween(today, event.endDate) < 0;
+};
+
 // =========================================================================
 // DERIVED VIEW
 //
@@ -199,18 +212,26 @@ export const decorateEvent = (document, splits = [], today = new Date()) => {
       ? Math.max(daysBetween(event.startDate, event.endDate) + 1, 1)
       : null;
 
-  // The status the dates imply. Stored status wins - "we cancelled" is a
-  // fact no date can express - but this is what the client offers.
-  const suggestedStatus =
-    event.status === "cancelled"
-      ? "cancelled"
-      : daysUntilStart === null
-        ? event.status
-        : daysUntilStart > 0
-          ? "planning"
-          : daysUntilEnd !== null && daysUntilEnd < 0
-            ? "done"
-            : "ongoing";
+  // Where this plan actually sits: still ahead, happening, or over.
+  //
+  // A status the user has SETTLED on wins over whatever the dates imply.
+  // "We cancelled it" and "we got back early / it is finished" are facts no
+  // date can express, and a trip marked done while its end date is still in
+  // the future used to keep reappearing under "Upcoming & live" because the
+  // dates were allowed to overrule the user. Only the two terminal statuses
+  // are sticky - "planning" and "ongoing" are the defaults a new plan is
+  // born with, so those still defer to the dates, which lets a plan move
+  // itself along without being touched (and lets a done plan be reopened by
+  // setting it back to planning).
+  const suggestedStatus = TERMINAL_STATUSES.has(event.status)
+    ? event.status
+    : daysUntilStart === null
+      ? event.status
+      : daysUntilStart > 0
+        ? "planning"
+        : daysUntilEnd !== null && daysUntilEnd < 0
+          ? "done"
+          : "ongoing";
 
   // The cap is what you said you would spend; the plan is what you have
   // itemised. Reporting both stops an under-itemised plan from looking
@@ -268,7 +289,13 @@ export const decorateEvent = (document, splits = [], today = new Date()) => {
     daysUntilEnd,
     durationDays,
     suggestedStatus,
-    isPast: suggestedStatus === "done" || event.status === "done",
+    isPast: suggestedStatus === "done",
+    // One field the list can filter on, so "which tab does this belong in"
+    // is answered in exactly one place rather than re-derived per view.
+    phase:
+      suggestedStatus === "cancelled" || suggestedStatus === "done"
+        ? "past"
+        : "upcoming",
   };
 };
 
@@ -1236,11 +1263,13 @@ export const getEventOverview = async (req, res) => {
       spentByEvent.set(key, entry);
     }
 
+    // "Still in front of you" has to respect a plan marked done: a trip
+    // finished early is not something you are still committed to spending
+    // on, however its dates read.
+    const now = new Date();
+
     const upcoming = events.filter(
-      (event) =>
-        event.status !== "cancelled" &&
-        event.startDate &&
-        daysBetween(new Date(), event.startDate) >= 0,
+      (event) => !isEventOver(event, now) && event.startDate,
     );
 
     res.json({

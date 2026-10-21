@@ -28,7 +28,7 @@ import Button from "../components/common/Button";
 import Modal from "../components/common/Modal";
 import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
-import CategoryProgressBar from "../components/common/CategoryProgressBar";
+import BudgetUtilizationPanel from "../components/common/BudgetUtilizationPanel";
 import { compactAmount, tileAmount } from "../utils/incomeFormulas";
 
 // "YYYY-MM-DD" in the viewer's own timezone. Every calendar key in this
@@ -134,22 +134,6 @@ export default function Analytics() {
   expenses.forEach((expense) => {
     categorySummary[expense.category] =
       (categorySummary[expense.category] || 0) + expense.amount;
-  });
-
-  const categoryUtilization = (budget?.categories || []).map((category) => {
-    const spent = expenses
-      .filter(
-        (expense) =>
-          expense.category?.toLowerCase().trim() ===
-          category.name?.toLowerCase().trim(),
-      )
-      .reduce((sum, expense) => sum + expense.amount, 0);
-
-    return {
-      name: category.name,
-      limit: category.limit,
-      spent,
-    };
   });
 
   // Daily expense totals keyed by local "YYYY-MM-DD", built from the
@@ -281,12 +265,39 @@ export default function Analytics() {
     (a, b) => b[1] - a[1],
   )[0];
 
+  // A budget is a monthly figure, so it is only ever measured against this
+  // month's spending. Comparing it with the all-time total - which is what
+  // this used to do - says "more than 80% used" to anyone who has been using
+  // the app for longer than a month, however little they spent.
+  const thisMonthKey = `${new Date().getFullYear()}-${String(
+    new Date().getMonth() + 1,
+  ).padStart(2, "0")}`;
+
+  const spentThisMonth = expenses
+    .filter((expense) =>
+      toLocalDateKey(expense.expenseDate).startsWith(thisMonthKey),
+    )
+    .reduce((sum, expense) => sum + expense.amount, 0);
+
+  const monthBudget = Number(budget?.totalBudget || 0);
+
+  const budgetInsight =
+    monthBudget <= 0
+      ? "No budget set for this month yet."
+      : spentThisMonth > monthBudget
+        ? `This month is over budget by ₹${Math.round(
+            spentThisMonth - monthBudget,
+          ).toLocaleString("en-IN")}.`
+        : spentThisMonth > monthBudget * 0.8
+          ? `You have used ${Math.round(
+              (spentThisMonth / monthBudget) * 100,
+            )}% of this month's budget.`
+          : "Budget utilization is healthy this month.";
+
   const insights = [
     topCategory ? `Highest spending category is ${topCategory[0]}` : null,
 
-    totalExpense > (budget?.totalBudget || 0) * 0.8
-      ? "You have used more than 80% of your budget."
-      : "Budget utilization is healthy.",
+    budgetInsight,
 
     highestDay[0]
       ? `Highest spending day was ${formatDate(highestDay[0])}`
@@ -759,27 +770,10 @@ export default function Analytics() {
         </div>
       </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mt-6">
-        <h2 className="text-xl font-semibold mb-6">Budget Utilization</h2>
-
-        {categoryUtilization.length === 0 ? (
-          <EmptyState
-            icon={FiPieChart}
-            title="No budget categories found"
-            message="Create a budget to track category utilization here."
-          />
-        ) : (
-          categoryUtilization.map((category) => (
-            <CategoryProgressBar
-              key={category.name}
-              name={category.name}
-              spent={category.spent}
-              limit={category.limit}
-              className="mb-5"
-            />
-          ))
-        )}
-      </div>
+      {/* Measured per month, and rolled up across months - a budget limit is
+          a monthly figure, so comparing it with a running all-time total
+          (which is what used to happen here) only ever reads "over". */}
+      <BudgetUtilizationPanel />
     </DashboardLayout>
   );
 }

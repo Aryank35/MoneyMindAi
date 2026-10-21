@@ -9,6 +9,7 @@ import {
   getBudgetDeleteImpact,
   getBudgetOverview,
   getBudgetMonths,
+  getBudgetUtilization,
   getCategoryCommitment,
 } from "../controllers/budgetController.js";
 
@@ -32,6 +33,9 @@ budgetRoutes.get("/overview/:userId", getBudgetOverview);
 
 // Which months have a plan, for the history navigator.
 budgetRoutes.get("/months/:userId", getBudgetMonths);
+
+// Utilisation month by month, plus the roll-up across every month.
+budgetRoutes.get("/utilization/:userId", getBudgetUtilization);
 
 // Whether a category is already promised to the planner.
 budgetRoutes.get("/commitment/:userId", getCategoryCommitment);

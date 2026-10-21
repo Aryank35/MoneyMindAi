@@ -5,6 +5,7 @@ import Sidebar from "./Sidebar";
 import MobileNav from "./MobileNav";
 import ConnectionBanner from "../common/ConnectionBanner";
 import QuickExpenseSheet from "../common/QuickExpenseSheet";
+import DailyDigest from "../common/DailyDigest";
 import { getDashboardData } from "../../services/dashboardService";
 import { getUserId } from "../../utils/auth";
 import { computeFinancialHealth } from "../../utils/financialHealth";
@@ -135,6 +136,12 @@ export default function DashboardLayout({ children }) {
 
       {/* Bottom tab bar - phones only; the sidebar covers lg and up. */}
       <MobileNav onQuickAdd={() => setShowQuickAdd(true)} />
+
+      {/* Everything dated for today or already past, shown once a day when
+          the app is opened. It lives here rather than on the dashboard so a
+          deep link - or the installed app reopening on whatever page it was
+          left on - still gets it. */}
+      <DailyDigest />
 
       <QuickExpenseSheet
         isOpen={showQuickAdd}

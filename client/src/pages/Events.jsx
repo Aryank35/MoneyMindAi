@@ -54,6 +54,16 @@ const formatRange = (start, end) => {
   return from === to.replace(/ \d{4}$/, "") ? to : `${from} – ${to}`;
 };
 
+// `phase` is the server's single answer to which tab a plan belongs in.
+// Re-deriving it per view from a mix of `status` and `suggestedStatus` is
+// what let a trip marked done sit in both tabs at once. The fallback keeps
+// an older server response working.
+const phaseOf = (event) =>
+  event.phase ||
+  (event.suggestedStatus === "done" || event.suggestedStatus === "cancelled"
+    ? "past"
+    : "upcoming");
+
 const STATUS_TONE = {
   planning: "bg-indigo-500/15 text-indigo-200",
   ongoing: "bg-emerald-500/15 text-emerald-200",
@@ -63,8 +73,15 @@ const STATUS_TONE = {
 
 // A countdown is the single most useful thing on a card for something that
 // has not happened yet, and dead weight for something that has.
+//
+// `suggestedStatus` is the server's one answer to "where is this plan",
+// and it already honours a status the user settled on - so a trip marked
+// done reads "Finished" rather than counting down to a date it never
+// reached.
 const countdownLabel = (event) => {
-  if (event.status === "cancelled") return "Cancelled";
+  if (event.suggestedStatus === "cancelled") return "Cancelled";
+
+  if (event.suggestedStatus === "done") return "Finished";
 
   if (event.daysUntilStart === null) return "";
 
@@ -175,26 +192,11 @@ export default function Events() {
   const visible = useMemo(() => {
     if (tab === "all") return events;
 
-    if (tab === "upcoming") {
-      return events.filter(
-        (event) =>
-          event.status !== "cancelled" &&
-          (event.suggestedStatus === "planning" ||
-            event.suggestedStatus === "ongoing"),
-      );
-    }
-
-    return events.filter(
-      (event) =>
-        event.suggestedStatus === "done" || event.status === "cancelled",
-    );
+    return events.filter((event) => phaseOf(event) === tab);
   }, [events, tab]);
 
   const totals = useMemo(() => {
-    const live = events.filter(
-      (event) =>
-        event.status !== "cancelled" && event.suggestedStatus !== "done",
-    );
+    const live = events.filter((event) => phaseOf(event) === "upcoming");
 
     return {
       committed: live.reduce(
@@ -351,19 +353,34 @@ export default function Events() {
           { key: "upcoming", label: "Upcoming & live" },
           { key: "past", label: "Finished" },
           { key: "all", label: "Everything" },
-        ].map((option) => (
-          <button
-            key={option.key}
-            onClick={() => setTab(option.key)}
-            className={`whitespace-nowrap rounded-xl border px-4 py-2 text-sm transition ${
-              tab === option.key
-                ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-100"
-                : "border-white/10 text-slate-400 hover:border-white/25 hover:text-white"
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
+        ].map((option) => {
+          const count =
+            option.key === "all"
+              ? events.length
+              : events.filter((event) => phaseOf(event) === option.key).length;
+
+          return (
+            <button
+              key={option.key}
+              onClick={() => setTab(option.key)}
+              className={`whitespace-nowrap rounded-xl border px-4 py-2 text-sm transition ${
+                tab === option.key
+                  ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-100"
+                  : "border-white/10 text-slate-400 hover:border-white/25 hover:text-white"
+              }`}
+            >
+              {option.label}
+
+              <span
+                className={`ml-2 text-xs ${
+                  tab === option.key ? "text-indigo-300" : "text-slate-500"
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ============ LIST ============ */}
