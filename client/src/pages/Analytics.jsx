@@ -4,7 +4,7 @@ import { getExpensesByUser } from "../services/expenseService";
 import { getBudgetByUser } from "../services/budgetService";
 
 import { getUserId } from "../utils/auth";
-import { CHART_COLORS } from "../utils/chartTheme";
+import { CHART_COLORS, TOOLTIP_STYLE } from "../utils/chartTheme";
 
 import { useEffect, useState } from "react";
 
@@ -29,7 +29,7 @@ import Modal from "../components/common/Modal";
 import { Skeleton } from "../components/common/Loader";
 import EmptyState from "../components/common/EmptyState";
 import BudgetUtilizationPanel from "../components/common/BudgetUtilizationPanel";
-import { compactAmount, tileAmount } from "../utils/incomeFormulas";
+import { compactAmount, money, tileAmount } from "../utils/incomeFormulas";
 
 // "YYYY-MM-DD" in the viewer's own timezone. Every calendar key in this
 // file goes through here so cell totals and day listings agree.
@@ -45,10 +45,83 @@ const toLocalDateKey = (value) => {
   );
 };
 
+// "YYYY-MM", the key every figure on this page is scoped by.
+const toMonthKey = (value) => toLocalDateKey(value).slice(0, 7);
+
+const monthKeyOf = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const labelForMonthKey = (key) => {
+  const [year, month] = key.split("-").map(Number);
+
+  return new Date(year, month - 1, 1).toLocaleDateString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+};
+
+const MONTH_NAMES = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+
+// A budget stores its month as a label like "September 2026"; older rows
+// have no monthKey at all. Mirrors the server's `keyForBudget` - parsed
+// strictly, because a budget silently filed under the wrong month is worse
+// than one with no month at all.
+const budgetMonthKey = (budget) => {
+  if (budget?.monthKey) return budget.monthKey;
+
+  const match = /^\s*([A-Za-z]+)\s+(\d{4})\s*$/.exec(budget?.month || "");
+
+  if (!match) return "";
+
+  const index = MONTH_NAMES.indexOf(match[1].toLowerCase());
+
+  if (index < 0) return "";
+
+  return `${match[2]}-${String(index + 1).padStart(2, "0")}`;
+};
+
+// A pie stops saying anything once it has more slices than the eye can
+// separate - and with a 10-colour ramp cycled across 40 categories the
+// colours repeat outright, so identity means nothing. The big ones are
+// named; the long tail is one honest "Other".
+const TOP_SLICES = 8;
+
+const toPieData = (summary) => {
+  const rows = Object.entries(summary)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
+  if (rows.length <= TOP_SLICES + 1) return rows;
+
+  const head = rows.slice(0, TOP_SLICES);
+
+  const tail = rows.slice(TOP_SLICES);
+
+  return [
+    ...head,
+    {
+      name: `Other (${tail.length})`,
+      value: tail.reduce((sum, row) => sum + row.value, 0),
+      isOther: true,
+    },
+  ];
+};
+
 export default function Analytics() {
   const [expenses, setExpenses] = useState([]);
 
-  const [budget, setBudget] = useState(null);
+  // Every month's plan, not just the current one - the page can be read for
+  // any month, and each month has to be measured against its own plan.
+  const [budgets, setBudgets] = useState([]);
+
+  // "month" reads the month the calendar is on; "all" reads everything ever
+  // recorded. The tiles used to be labelled "Monthly" while summing all of
+  // history, which is why a month with a 1,28,500 income showed the same
+  // figure in April as in October.
+  const [scope, setScope] = useState("month");
 
   const [selectedDate, setSelectedDate] = useState(null);
 
@@ -90,7 +163,7 @@ export default function Analytics() {
 
         setExpenses(expenseRes.data || []);
 
-        setBudget(budgetRes.data?.[0] || null);
+        setBudgets(budgetRes.data || []);
 
         setAccounts(accountRes.data || []);
 
@@ -130,8 +203,54 @@ export default function Analytics() {
     );
   }
 
+  const year = currentDate.getFullYear();
+
+  const month = currentDate.getMonth();
+
+  // ======================================================================
+  // THE PERIOD EVERY FIGURE BELOW IS READ FOR
+  //
+  // One notion of "when" for the whole page: the calendar's month arrows
+  // and the period control move the same state, so the tiles and the
+  // calendar can never be describing different months.
+  // ======================================================================
+  const activeMonthKey = monthKeyOf(currentDate);
+
+  const isAllTime = scope === "all";
+
+  const periodLabel = isAllTime
+    ? "All time"
+    : labelForMonthKey(activeMonthKey);
+
+  const inPeriod = (value) =>
+    isAllTime || toMonthKey(value) === activeMonthKey;
+
+  const periodExpenses = expenses.filter((expense) =>
+    inPeriod(expense.expenseDate),
+  );
+
+  const periodIncomes = incomes.filter((income) => inPeriod(income.incomeDate));
+
+  // Months that actually have something in them, newest first, plus the
+  // current month so the page always opens on a real choice.
+  const availableMonths = [
+    ...new Set([
+      monthKeyOf(new Date()),
+      activeMonthKey,
+      ...expenses.map((expense) => toMonthKey(expense.expenseDate)),
+      ...incomes.map((income) => toMonthKey(income.incomeDate)),
+    ]),
+  ].sort((a, b) => (a < b ? 1 : -1));
+
+  // The plan belonging to the month on screen - not whichever plan happened
+  // to be returned first.
+  const activeBudget = isAllTime
+    ? null
+    : budgets.find((item) => budgetMonthKey(item) === activeMonthKey) || null;
+
   const categorySummary = {};
-  expenses.forEach((expense) => {
+
+  periodExpenses.forEach((expense) => {
     categorySummary[expense.category] =
       (categorySummary[expense.category] || 0) + expense.amount;
   });
@@ -151,9 +270,16 @@ export default function Analytics() {
     expensesByDate[key] = (expensesByDate[key] || 0) + expense.amount;
   });
 
-  const year = currentDate.getFullYear();
+  // The highest and lowest spending day are read for the period on screen,
+  // so "my worst day" means the worst day of this month rather than the
+  // worst day in the app's entire history.
+  const periodByDate = {};
 
-  const month = currentDate.getMonth();
+  periodExpenses.forEach((expense) => {
+    const key = toLocalDateKey(expense.expenseDate);
+
+    periodByDate[key] = (periodByDate[key] || 0) + expense.amount;
+  });
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(year, month - 1, 1));
@@ -163,7 +289,7 @@ export default function Analytics() {
     setCurrentDate(new Date(year, month + 1, 1));
   };
 
-  const sortedDays = Object.entries(expensesByDate).sort((a, b) => b[1] - a[1]);
+  const sortedDays = Object.entries(periodByDate).sort((a, b) => b[1] - a[1]);
 
   const highestDay = sortedDays[0] || [null, 0];
 
@@ -190,11 +316,22 @@ export default function Analytics() {
     (expense) => toLocalDateKey(expense.expenseDate) === selectedDate,
   );
 
-  const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  // Everything below is the PERIOD's figure. These used to be whole-history
+  // sums sitting under labels that said "Monthly".
+  const totalSpent = periodExpenses.reduce(
+    (sum, expense) => sum + expense.amount,
+    0,
+  );
 
-  const totalBudget = budget?.totalBudget || 0;
+  const totalIncome = periodIncomes.reduce(
+    (sum, income) => sum + income.amount,
+    0,
+  );
 
-  const totalIncome = incomes.reduce((sum, income) => sum + income.amount, 0);
+  // A budget is a monthly plan, so there is no such thing as an all-time
+  // one. Rather than sum plans that were never meant to be added together,
+  // the remaining-budget card says so and steps aside.
+  const totalBudget = Number(activeBudget?.totalBudget || 0);
 
   const remaining = Math.max(0, totalBudget - totalSpent);
 
@@ -218,10 +355,7 @@ export default function Analytics() {
     return "bg-red-500/20";
   };
 
-  const totalExpense = expenses.reduce(
-    (sum, expense) => sum + expense.amount,
-    0,
-  );
+  const totalExpense = totalSpent;
 
   const savingsRate =
     totalIncome > 0
@@ -238,14 +372,16 @@ export default function Analytics() {
     return "Spender";
   };
 
-  const netWorth = totalIncome - totalExpense;
+  // Income minus spending for the period. This was labelled "Net Worth",
+  // which it has never been - net worth is what the accounts hold, and that
+  // is shown further down under Accounts Overview.
+  const netSaved = totalIncome - totalExpense;
 
-  const transactionCount = expenses.length;
+  const transactionCount = periodExpenses.length;
 
-  const pieData = Object.entries(categorySummary).map(([name, value]) => ({
-    name,
-    value,
-  }));
+  const categoryCount = Object.keys(categorySummary).length;
+
+  const pieData = toPieData(categorySummary);
 
   const accountPieData = accounts.map((account) => ({
     name: account.name,
@@ -265,37 +401,28 @@ export default function Analytics() {
     (a, b) => b[1] - a[1],
   )[0];
 
-  // A budget is a monthly figure, so it is only ever measured against this
+  // A budget is a monthly figure, so it is only ever measured against one
   // month's spending. Comparing it with the all-time total - which is what
-  // this used to do - says "more than 80% used" to anyone who has been using
-  // the app for longer than a month, however little they spent.
-  const thisMonthKey = `${new Date().getFullYear()}-${String(
-    new Date().getMonth() + 1,
-  ).padStart(2, "0")}`;
-
-  const spentThisMonth = expenses
-    .filter((expense) =>
-      toLocalDateKey(expense.expenseDate).startsWith(thisMonthKey),
-    )
-    .reduce((sum, expense) => sum + expense.amount, 0);
-
-  const monthBudget = Number(budget?.totalBudget || 0);
-
-  const budgetInsight =
-    monthBudget <= 0
-      ? "No budget set for this month yet."
-      : spentThisMonth > monthBudget
-        ? `This month is over budget by ₹${Math.round(
-            spentThisMonth - monthBudget,
+  // this used to do - tells anyone who has used the app for more than a
+  // month that they are over, however little they spent.
+  const budgetInsight = isAllTime
+    ? "Pick a month to measure spending against its budget."
+    : totalBudget <= 0
+      ? `No budget was set for ${periodLabel}.`
+      : totalSpent > totalBudget
+        ? `${periodLabel} is over budget by ₹${Math.round(
+            totalSpent - totalBudget,
           ).toLocaleString("en-IN")}.`
-        : spentThisMonth > monthBudget * 0.8
+        : totalSpent > totalBudget * 0.8
           ? `You have used ${Math.round(
-              (spentThisMonth / monthBudget) * 100,
-            )}% of this month's budget.`
-          : "Budget utilization is healthy this month.";
+              (totalSpent / totalBudget) * 100,
+            )}% of the ${periodLabel} budget.`
+          : `Budget utilization is healthy in ${periodLabel}.`;
 
   const insights = [
-    topCategory ? `Highest spending category is ${topCategory[0]}` : null,
+    topCategory
+      ? `Highest spending category is ${topCategory[0]} (${periodLabel.toLowerCase()})`
+      : null,
 
     budgetInsight,
 
@@ -312,11 +439,60 @@ export default function Analytics() {
         transition={{ duration: 0.25 }}
         className="mb-8"
       >
-        <h1 className="text-4xl font-bold">Analytics</h1>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="text-4xl font-bold">Analytics</h1>
 
-        <p className="text-slate-400 mt-2">
-          Deep dive into your spending patterns, income and financial habits
-        </p>
+            <p className="text-slate-400 mt-2">
+              Deep dive into your spending patterns, income and financial
+              habits
+            </p>
+          </div>
+
+          {/* One control for the whole page. It moves the same state the
+              calendar's arrows do, so the tiles and the calendar are always
+              describing the same month. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-xl border border-white/10 p-1">
+              {[
+                { key: "month", label: "By month" },
+                { key: "all", label: "All time" },
+              ].map((option) => (
+                <button
+                  key={option.key}
+                  onClick={() => setScope(option.key)}
+                  className={`rounded-lg px-3 py-1.5 text-sm transition ${
+                    scope === option.key
+                      ? "bg-indigo-500/20 text-indigo-100"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            <select
+              value={activeMonthKey}
+              onChange={(event) => {
+                const [nextYear, nextMonth] = event.target.value
+                  .split("-")
+                  .map(Number);
+
+                setCurrentDate(new Date(nextYear, nextMonth - 1, 1));
+                setScope("month");
+              }}
+              disabled={isAllTime}
+              className="rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-indigo-500/50 disabled:opacity-40"
+            >
+              {availableMonths.map((key) => (
+                <option key={key} value={key}>
+                  {labelForMonthKey(key)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </motion.div>
 
       <motion.div
@@ -325,60 +501,128 @@ export default function Analytics() {
         transition={{ duration: 0.25 }}
         className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6"
       >
-        <h2 className="text-xl font-semibold mb-4">Category Distribution</h2>
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-xl font-semibold">Category Distribution</h2>
+
+          <p className="text-sm text-slate-400">
+            {periodLabel}
+            {categoryCount > 0 && (
+              <>
+                <span className="text-slate-600"> · </span>
+                {categoryCount}{" "}
+                {categoryCount === 1 ? "category" : "categories"}
+                <span className="text-slate-600"> · </span>
+                {money(totalSpent)}
+              </>
+            )}
+          </p>
+        </div>
 
         {pieData.length === 0 ? (
           <EmptyState
             icon={FiPieChart}
             title="No expense data yet"
-            message="Add some expenses to see your category distribution."
+            message={
+              isAllTime
+                ? "Add some expenses to see your category distribution."
+                : `Nothing was spent in ${periodLabel}.`
+            }
           />
         ) : (
-          <ResponsiveContainer width="100%" height={350}>
-            <PieChart>
-              <Pie
-                data={pieData}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                innerRadius="40%"
-                outerRadius="75%"
-                paddingAngle={3}
-                label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
-              >
-                {pieData.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={COLORS[index % COLORS.length]}
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:items-center">
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="55%"
+                  outerRadius="85%"
+                  paddingAngle={2}
+                  stroke="#0b0b0f"
+                  strokeWidth={2}
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell
+                      key={entry.name}
+                      // The tail is deliberately neutral - "Other" is an
+                      // absence of identity, not another category.
+                      fill={entry.isOther ? "#4b4b55" : COLORS[index]}
+                    />
+                  ))}
+                </Pie>
+
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  formatter={(value, name) => [money(value), name]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+
+            {/* The ranked readout is the part that actually gets read: every
+                slice named, with its amount and share, rather than forty
+                percentages fighting for room around a circle. */}
+            <div className="space-y-1.5">
+              {pieData.map((entry, index) => (
+                <div
+                  key={entry.name}
+                  className="flex items-center gap-3 text-sm"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style={{
+                      background: entry.isOther ? "#4b4b55" : COLORS[index],
+                    }}
                   />
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(value, name) => [`₹${value.toLocaleString()}`, name]}
-              />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
+
+                  <span className="min-w-0 flex-1 truncate text-slate-300">
+                    {entry.name}
+                  </span>
+
+                  <span className="shrink-0 tabular-nums text-slate-400">
+                    {money(entry.value)}
+                  </span>
+
+                  <span className="w-10 shrink-0 text-right tabular-nums text-slate-500">
+                    {totalSpent > 0
+                      ? `${Math.round((entry.value / totalSpent) * 100)}%`
+                      : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </motion.div>
 
+      {/* Each tile names the period it is for. "Monthly Income" over an
+          all-time sum was the single most misleading thing on this page. */}
       <div className="grid md:grid-cols-4 gap-4 mb-6">
         {[
           {
-            label: "Monthly Income",
-            value: totalIncome,
+            label: "Income",
+            value: money(totalIncome),
             valueClassName: "",
           },
           {
-            label: "Monthly Expense",
-            value: totalSpent,
+            label: "Expense",
+            value: money(totalSpent),
             valueClassName: "text-red-400",
           },
           {
-            label: "Net Worth",
-            value: netWorth,
-            valueClassName: "text-green-400",
+            label: "Net saved",
+            value: money(netSaved),
+            valueClassName: netSaved < 0 ? "text-red-400" : "text-green-400",
+            hint:
+              netSaved < 0 ? "spent more than came in" : "income minus spending",
+          },
+          {
+            label: "Savings rate",
+            value: `${savingsRate.toFixed(0)}%`,
+            valueClassName: savingsRate < 0 ? "text-red-400" : "",
           },
         ].map((card, index) => (
           <motion.div
@@ -390,22 +634,17 @@ export default function Analytics() {
           >
             <p className="text-slate-400">{card.label}</p>
 
-            <h3 className={`text-2xl font-bold ${card.valueClassName}`}>
-              ₹{card.value.toLocaleString()}
+            <h3
+              className={`text-2xl font-bold tabular-nums ${card.valueClassName}`}
+            >
+              {card.value}
             </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              {card.hint || periodLabel}
+            </p>
           </motion.div>
         ))}
-
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, delay: 0.15 }}
-          className="bg-white/5 rounded-2xl p-5"
-        >
-          <p className="text-slate-400">Savings Rate</p>
-
-          <h3 className="text-2xl font-bold">{savingsRate.toFixed(2)}%</h3>
-        </motion.div>
       </div>
 
       <motion.div
@@ -414,10 +653,40 @@ export default function Analytics() {
         transition={{ duration: 0.25 }}
         className="bg-white/5 rounded-2xl p-6 mb-6"
       >
-        <p className="text-slate-400">Remaining Budget</p>
-        <h2 className="text-3xl font-bold mt-1">
-          ₹{remaining.toLocaleString()}
-        </h2>
+        <p className="text-slate-400">
+          Remaining Budget
+          <span className="text-slate-600"> · </span>
+          <span className="text-slate-500">{periodLabel}</span>
+        </p>
+
+        {/* A budget is a monthly plan. There is no all-time one, and summing
+            twelve separate plans into a single "remaining" would be a figure
+            that never meant anything. */}
+        {isAllTime ? (
+          <p className="mt-1 text-sm text-slate-500">
+            Pick a month to see what is left of its budget.
+          </p>
+        ) : totalBudget <= 0 ? (
+          <p className="mt-1 text-sm text-slate-500">
+            No budget was set for {periodLabel}.
+          </p>
+        ) : (
+          <>
+            <h2 className="text-3xl font-bold mt-1 tabular-nums">
+              {money(remaining)}
+            </h2>
+
+            <p className="mt-1 text-xs text-slate-500">
+              of {money(totalBudget)} planned
+              {totalSpent > totalBudget && (
+                <span className="text-red-400">
+                  {" "}
+                  · {money(totalSpent - totalBudget)} over
+                </span>
+              )}
+            </p>
+          </>
+        )}
 
         <div className="grid grid-cols-3 gap-2 sm:gap-4 mt-6">
           {[
@@ -561,7 +830,7 @@ export default function Analytics() {
         </h1>
 
         <p className="text-slate-400 mt-3">
-          Based on your savings rate and spending habits.
+          Based on your savings rate in {periodLabel.toLowerCase()}.
         </p>
       </motion.div>
 
@@ -752,21 +1021,31 @@ export default function Analytics() {
 
       <div className="grid md:grid-cols-2 gap-4 mt-6">
         <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
-          <p className="text-slate-400">Highest Spending Day</p>
+          <p className="text-slate-400">
+            Highest Spending Day
+            <span className="text-slate-600"> · </span>
+            <span className="text-slate-500">{periodLabel}</span>
+          </p>
 
           <h3 className="text-xl font-bold mt-2">
             {formatDate(highestDay[0])}
           </h3>
 
-          <p className="text-red-400">₹{highestDay[1]}</p>
+          <p className="text-red-400 tabular-nums">{money(highestDay[1])}</p>
         </div>
 
         <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-5">
-          <p className="text-slate-400">Lowest Spending Day</p>
+          <p className="text-slate-400">
+            Lowest Spending Day
+            <span className="text-slate-600"> · </span>
+            {/* Days with no spending at all are not candidates - otherwise
+                the answer is always zero and never says anything. */}
+            <span className="text-slate-500">cheapest day with spending</span>
+          </p>
 
           <h3 className="text-xl font-bold mt-2">{formatDate(lowestDay[0])}</h3>
 
-          <p className="text-green-400">₹{lowestDay[1]}</p>
+          <p className="text-green-400 tabular-nums">{money(lowestDay[1])}</p>
         </div>
       </div>
 
